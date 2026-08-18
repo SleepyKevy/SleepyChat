@@ -33,7 +33,6 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           if (-not (Test-Path 'directsrc/CSharpHost/SleepyChat.csproj')) { throw 'Direct C# project is missing.' }
-          New-Item -ItemType Directory -Path 'directsrc/CSharpHost/assets' -Force | Out-Null
 
           $backendEncoded = (Get-Content -LiteralPath 'directsrc/BackendHost.cs.gz.b64' -Raw).Trim()
           [IO.File]::WriteAllBytes('BackendHost.cs.gz', [Convert]::FromBase64String($backendEncoded))
@@ -49,10 +48,7 @@ jobs:
           }
           finally { $inputStream.Dispose() }
 
-          $iconEncoded = (Get-Content -LiteralPath 'directsrc/app.ico.b64' -Raw).Trim()
-          [IO.File]::WriteAllBytes('directsrc/CSharpHost/assets/app.ico', [Convert]::FromBase64String($iconEncoded))
-
-          foreach ($required in @('Program.cs','AppUtil.cs','MainForm.cs','IntegrationConfig.cs','BackendHost.cs','SleepyChat.csproj','assets/app.ico')) {
+          foreach ($required in @('Program.cs','AppUtil.cs','MainForm.cs','IntegrationConfig.cs','BackendHost.cs','SleepyChat.csproj')) {
             if (-not (Test-Path (Join-Path 'directsrc/CSharpHost' $required))) { throw "Required direct source file missing: $required" }
           }
           if (Get-ChildItem 'directsrc' -Recurse -Filter *.go -File -ErrorAction SilentlyContinue) { throw 'Unexpected Go source in corrected direct build.' }
