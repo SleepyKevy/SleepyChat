@@ -66,6 +66,11 @@ jobs:
             if ($proc.ExitCode -ne 0) { throw "git show failed for $spec : $($proc.StandardError.ReadToEnd())" }
           }
 
+          function Get-CleanBase64([string]$path) {
+            $raw = [IO.File]::ReadAllText($path)
+            return [Text.RegularExpressions.Regex]::Replace($raw, '[^A-Za-z0-9+/=]', '')
+          }
+
           $sourceBlobs = [ordered]@{
             '.gitignore'                         = '66d2f32a2c941d8bd0ccde0a8b48dcaf7eaeb9cb'
             'BUILD_RELEASE.ps1'                  = '2ea8ca08fa09ae9ead84cb338af13b54c41a496f'
@@ -89,7 +94,8 @@ jobs:
 
           $indexPayload = Join-Path $env:RUNNER_TEMP 'sleepychat-index.b64'
           Write-GitSpec '663755c4fccf18bce889e3dea863ce6ce3587760:.bootstrap/index.html.gz.b64' $indexPayload
-          $indexBytes = [Convert]::FromBase64String(([IO.File]::ReadAllText($indexPayload)).Trim())
+          $indexB64 = Get-CleanBase64 $indexPayload
+          $indexBytes = [Convert]::FromBase64String($indexB64)
           $input = [IO.MemoryStream]::new($indexBytes)
           $gzip = [IO.Compression.GZipStream]::new($input, [IO.Compression.CompressionMode]::Decompress)
           $indexPath = Join-Path $stage 'CSharpHost/web/index.html'
@@ -109,7 +115,7 @@ jobs:
           foreach ($part in $assetParts) {
             $partFile = Join-Path $env:RUNNER_TEMP ("asset-" + $part.Name + '.txt')
             Write-GitSpec $part.Spec $partFile
-            [void]$builder.Append(([IO.File]::ReadAllText($partFile)).Trim())
+            [void]$builder.Append((Get-CleanBase64 $partFile))
           }
           $assetBytes = [Convert]::FromBase64String($builder.ToString())
           $assetZip = Join-Path $env:RUNNER_TEMP 'sleepychat-assets.zip'
