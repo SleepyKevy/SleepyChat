@@ -16,23 +16,34 @@ jobs:
       - name: Checkout main
         uses: actions/checkout@v6
 
-      - name: Restore staged SleepyChat assets
+      - name: Restore staged SleepyChat source payload
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $parts = @(Get-ChildItem '.bootstrap' -Filter 'assetpack.b64.*' | Sort-Object Name)
-          if ($parts.Count -lt 1) { throw 'No staged asset payload chunks were found.' }
+          if ($parts.Count -lt 1) { throw 'No staged source payload chunks were found.' }
           $b64 = ($parts | ForEach-Object { (Get-Content $_.FullName -Raw).Trim() }) -join ''
           $bytes = [Convert]::FromBase64String($b64)
-          $zip = Join-Path $env:RUNNER_TEMP 'sleepychat-assets.zip'
+          $zip = Join-Path $env:RUNNER_TEMP 'sleepychat-source-fix.zip'
           [IO.File]::WriteAllBytes($zip, $bytes)
           $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($hash -ne '55915c5af5c2e76e56998e41f98b3716f572daa94a0bdf34cfc9fdf4848c5b32') {
-            throw "Asset payload checksum mismatch: $hash"
+          if ($hash -ne 'd870983123c9f2d0dc7c92564ff7a64ff4a49a758dcc9ffc167243cba2009264') {
+            throw "Source payload checksum mismatch: $hash"
           }
           Expand-Archive -Path $zip -DestinationPath . -Force
 
+          Copy-Item 'CSharpHost/assets/app.ico' 'CSharpHost/web/favicon.ico' -Force
+          Copy-Item 'CSharpHost/assets/app-64.png' 'CSharpHost/web/favicon-64.png' -Force
+          Copy-Item 'CSharpHost/assets/app-192.png' 'CSharpHost/web/favicon-192.png' -Force
+
+          $html = [IO.File]::ReadAllText('CSharpHost/web/index.html')
+          if ($html -notmatch '/api/twitch-badges' -or $html -notmatch '/api/kick-badges' -or $html -notmatch '/api/kick-badge-image') {
+            throw 'Restored SleepyChat UI is missing final badge API calls.'
+          }
+
           $required = @(
+            'CSharpHost/web/index.html',
+            'CSharpHost/web/manifest.webmanifest',
             'CSharpHost/web/favicon.ico',
             'CSharpHost/web/favicon-64.png',
             'CSharpHost/web/favicon-192.png',
@@ -41,6 +52,7 @@ jobs:
             'CSharpHost/assets/app-128.png',
             'CSharpHost/assets/app-192.png',
             'CSharpHost/assets/app-256.png',
+            'CSharpHost/assets/app-512.png',
             'CSharpHost/assets/platform-kick.png',
             'CSharpHost/assets/platform-twitch.png',
             'CSharpHost/assets/theme-blue-raccoon.png',
@@ -50,11 +62,11 @@ jobs:
             'CSharpHost/assets/theme-pink-raccoon.png'
           )
           foreach ($path in $required) {
-            if (-not (Test-Path $path)) { throw "Missing completed source asset: $path" }
-            if ((Get-Item $path).Length -eq 0) { throw "Empty completed source asset: $path" }
+            if (-not (Test-Path $path)) { throw "Missing completed source file: $path" }
+            if ((Get-Item $path).Length -eq 0) { throw "Empty completed source file: $path" }
           }
 
-      - name: Commit completed source assets
+      - name: Commit completed source payload
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -63,5 +75,5 @@ jobs:
           git config user.name 'SleepyChat Import Bot'
           git config user.email 'actions@users.noreply.github.com'
           git add -A
-          git commit -m 'Complete SleepyChat 1.0.0 source assets'
+          git commit -m 'Complete SleepyChat 1.0.0 source import'
           git push origin HEAD:main
