@@ -3,6 +3,7 @@ name: Import Exact SleepyChat Source
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -23,23 +24,19 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $zip = Join-Path $env:RUNNER_TEMP 'SleepyChat-Source.zip'
           $extract = Join-Path $env:RUNNER_TEMP 'SleepyChat-Source'
-          $urls = @(
-            'https://drive.usercontent.google.com/download?id=1pTZKM_WN-JBBLkUqPeaPlJYV-Qsh3p0v&export=download&confirm=t',
-            'https://drive.google.com/uc?export=download&id=1pTZKM_WN-JBBLkUqPeaPlJYV-Qsh3p0v&confirm=t'
-          )
-          $downloaded = $false
-          foreach ($url in $urls) {
-            try {
-              Invoke-WebRequest -Uri $url -OutFile $zip -MaximumRedirection 10 -UseBasicParsing
-              if ((Test-Path $zip) -and (Get-Item $zip).Length -gt 10000000) {
-                $downloaded = $true
-                break
-              }
-            } catch {
-              Write-Host "Staging URL failed; trying fallback."
-            }
+          $expectedSha256 = 'f42752948a18d2ac6f1563d4481cd8041777517f684c6b163d658ac64254e3b7'
+          $fileId = '1pTZKM_WN-JBBLkUqPeaPlJYV-Qsh3p0v'
+
+          python -m pip install --disable-pip-version-check --quiet gdown
+          python -m gdown --id $fileId -O $zip
+
+          if (-not (Test-Path $zip)) { throw 'SleepyChat source ZIP was not downloaded.' }
+          $size = (Get-Item $zip).Length
+          if ($size -ne 10607517) { throw "Downloaded staging file has the wrong size: $size bytes." }
+          $actualSha256 = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
+          if ($actualSha256 -ne $expectedSha256) {
+            throw "Downloaded staging ZIP failed SHA-256 verification. Expected $expectedSha256, got $actualSha256."
           }
-          if (-not $downloaded) { throw 'Exact source staging ZIP is not publicly readable by GitHub Actions.' }
 
           if (Test-Path $extract) { Remove-Item $extract -Recurse -Force }
           New-Item -ItemType Directory -Path $extract | Out-Null
