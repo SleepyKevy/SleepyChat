@@ -1,0 +1,1 @@
+Direct tree assembly will reference exact source blobs and verified optimized image blobs by SHA.
