@@ -14,38 +14,32 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Rebuild exact index.html
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Rebuild and verify canonical index.html
+        shell: python
+        run: |
+          import base64, gzip, hashlib, pathlib, subprocess
+          parts = [pathlib.Path(f'.bootstrap/exact-ui/{n}.txt') for n in ('000','001','002')]
+          raw = ''.join(p.read_text(encoding='utf-8').strip() for p in parts)
+          assert len(raw) == 22872, f'base64 length {len(raw)}'
+          packed = base64.b64decode(raw, validate=True)
+          assert hashlib.sha256(packed).hexdigest() == '6c32288007aa36f302aee3d232780ea8ffd0a1b4c36ebc565cc7b1416f654efe'
+          data = gzip.decompress(packed)
+          assert len(data) == 59234, len(data)
+          path = pathlib.Path('CSharpHost/web/index.html')
+          path.parent.mkdir(parents=True, exist_ok=True)
+          path.write_bytes(data)
+          git_sha = subprocess.check_output(['git','hash-object',str(path)], text=True).strip()
+          assert git_sha == '79454247d3bf906b7bac25d898cf2bb8cd3038ce', git_sha
+      - name: Commit canonical UI
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $parts = @(
-            '.bootstrap/exact-ui/000.txt',
-            '.bootstrap/exact-ui/001.txt',
-            '.bootstrap/exact-ui/002.txt'
-          )
-          foreach ($p in $parts) { if (-not (Test-Path $p)) { throw "Missing $p" } }
-          $b64 = ($parts | ForEach-Object { (Get-Content $_ -Raw).Trim() }) -join ''
-          if ($b64.Length -ne 22872) { throw "Unexpected base64 length: $($b64.Length)" }
-          $gzBytes = [Convert]::FromBase64String($b64)
-          $gz = Join-Path $env:RUNNER_TEMP 'index.html.gz'
-          [IO.File]::WriteAllBytes($gz, $gzBytes)
-          $gzHash = (Get-FileHash $gz -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($gzHash -ne '6c32288007aa36f302aee3d232780ea8ffd0a1b4c36ebc565cc7b1416f654efe') { throw "Gzip hash mismatch: $gzHash" }
-          $input = [IO.MemoryStream]::new($gzBytes)
-          $gzip = [IO.Compression.GZipStream]::new($input,[IO.Compression.CompressionMode]::Decompress)
-          $out = [IO.MemoryStream]::new()
-          try { $gzip.CopyTo($out) } finally { $gzip.Dispose(); $input.Dispose() }
-          $bytes = $out.ToArray(); $out.Dispose()
-          if ($bytes.Length -ne 59234) { throw "Unexpected index size: $($bytes.Length)" }
-          New-Item -ItemType Directory -Force 'CSharpHost/web' | Out-Null
-          [IO.File]::WriteAllBytes('CSharpHost/web/index.html',$bytes)
-          $gitHash = (& git hash-object -- 'CSharpHost/web/index.html').Trim()
-          if ($gitHash -ne '79454247d3bf906b7bac25d898cf2bb8cd3038ce') { throw "index Git hash mismatch: $gitHash" }
-      - name: Commit exact UI blob
-        shell: pwsh
-        run: |
           git config user.name 'SleepyChat Import Bot'
           git config user.email 'actions@users.noreply.github.com'
           git add CSharpHost/web/index.html
+          if (git diff --cached --quiet) { throw 'Canonical UI produced no change.' }
           git commit -m 'Materialize exact SleepyChat 1.0.0 UI'
           git push origin HEAD:main
