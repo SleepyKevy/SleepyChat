@@ -1,0 +1,101 @@
+name: Import Exact SleepyChat Source
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  import-source:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: windows-latest
+    steps:
+      - name: Checkout current repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Download and validate exact source package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = Join-Path $env:RUNNER_TEMP 'SleepyChat-Source.zip'
+          $extract = Join-Path $env:RUNNER_TEMP 'SleepyChat-Source'
+          $urls = @(
+            'https://drive.usercontent.google.com/download?id=1pTZKM_WN-JBBLkUqPeaPlJYV-Qsh3p0v&export=download&confirm=t',
+            'https://drive.google.com/uc?export=download&id=1pTZKM_WN-JBBLkUqPeaPlJYV-Qsh3p0v&confirm=t'
+          )
+          $downloaded = $false
+          foreach ($url in $urls) {
+            try {
+              Invoke-WebRequest -Uri $url -OutFile $zip -MaximumRedirection 10 -UseBasicParsing
+              if ((Test-Path $zip) -and (Get-Item $zip).Length -gt 10000000) {
+                $downloaded = $true
+                break
+              }
+            } catch {
+              Write-Host "Staging URL failed; trying fallback."
+            }
+          }
+          if (-not $downloaded) { throw 'Exact source staging ZIP is not publicly readable by GitHub Actions.' }
+
+          if (Test-Path $extract) { Remove-Item $extract -Recurse -Force }
+          New-Item -ItemType Directory -Path $extract | Out-Null
+          Expand-Archive -Path $zip -DestinationPath $extract -Force
+
+          $required = @(
+            '.github/workflows/csharp-runtime-smoke.yml',
+            '.gitignore',
+            'BUILD_RELEASE.ps1',
+            'CSharpHost/AppUtil.cs',
+            'CSharpHost/BackendHost.cs',
+            'CSharpHost/IntegrationConfig.cs',
+            'CSharpHost/MainForm.cs',
+            'CSharpHost/Program.cs',
+            'CSharpHost/SleepyChat.csproj',
+            'CSharpHost/assets/app.ico',
+            'CSharpHost/assets/platform-kick.png',
+            'CSharpHost/assets/platform-twitch.png',
+            'CSharpHost/assets/theme-blue-raccoon.png',
+            'CSharpHost/assets/theme-red-raccoon.png',
+            'CSharpHost/assets/theme-purple-raccoon.png',
+            'CSharpHost/assets/theme-green-raccoon.png',
+            'CSharpHost/assets/theme-pink-raccoon.png',
+            'CSharpHost/web/index.html',
+            'CSharpHost/web/manifest.webmanifest',
+            'README.md',
+            'VALIDATION.txt',
+            'readme.txt',
+            'release_notes.txt'
+          )
+          foreach ($path in $required) {
+            $full = Join-Path $extract $path
+            if (-not (Test-Path $full)) { throw "Source package missing: $path" }
+          }
+
+          $files = @(Get-ChildItem $extract -Recurse -File)
+          if ($files.Count -ne 32) { throw "Expected exactly 32 source files, found $($files.Count)." }
+          if ((Get-Item (Join-Path $extract 'CSharpHost/web/index.html')).Length -ne 59234) {
+            throw 'Source index.html size does not match the canonical SleepyChat 1.0.0 source.'
+          }
+          $html = [IO.File]::ReadAllText((Join-Path $extract 'CSharpHost/web/index.html'))
+          foreach ($needle in @('/api/twitch-badges','/api/kick-badges','/api/kick-badge-image')) {
+            if (-not $html.Contains($needle)) { throw "Canonical UI marker missing: $needle" }
+          }
+
+          Get-ChildItem -Force | Where-Object { $_.Name -ne '.git' } | Remove-Item -Recurse -Force
+          Copy-Item (Join-Path $extract '*') . -Recurse -Force
+
+      - name: Commit exact source tree
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git config user.name 'SleepyChat Import Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          $count = [int](git ls-files | Measure-Object -Line).Lines
+          if ($count -ne 32) { throw "Final Git tree should contain exactly 32 files; found $count." }
+          git commit -m 'Restore exact SleepyChat 1.0.0 source tree'
+          git push origin HEAD:main
