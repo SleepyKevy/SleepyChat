@@ -1,0 +1,46 @@
+name: Restore SleepyChat Main Index
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  restore-index:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v6
+
+      - name: Restore exact index.html
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = '.bootstrap/index.html.gz.b64'
+          if (-not (Test-Path $source)) { throw "Missing staged source: $source" }
+          $b64 = (Get-Content $source -Raw).Trim()
+          $gzBytes = [Convert]::FromBase64String($b64)
+          $input = [IO.MemoryStream]::new($gzBytes)
+          $gzip = [IO.Compression.GZipStream]::new($input, [IO.Compression.CompressionMode]::Decompress)
+          $output = [IO.MemoryStream]::new()
+          $gzip.CopyTo($output)
+          $gzip.Dispose(); $input.Dispose()
+          [IO.Directory]::CreateDirectory('CSharpHost/web') | Out-Null
+          [IO.File]::WriteAllBytes('CSharpHost/web/index.html', $output.ToArray())
+          $output.Dispose()
+          if ((Get-Item 'CSharpHost/web/index.html').Length -ne 59234) { throw 'Restored index.html size mismatch.' }
+          $html = [IO.File]::ReadAllText('CSharpHost/web/index.html')
+          if ($html -notmatch 'SleepyChat 1\.0\.0' -or $html -notmatch '/api/twitch-badges' -or $html -notmatch '/api/kick-badge-image') { throw 'Restored UI validation failed.' }
+
+      - name: Commit restored index
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git config user.name 'SleepyChat Import Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add CSharpHost/web/index.html
+          if (git diff --cached --quiet) { exit 0 }
+          git commit -m 'Restore SleepyChat web entrypoint'
+          git push origin HEAD:main
