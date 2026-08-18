@@ -5,9 +5,14 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/complete-source-assets.yml'
+      - '.bootstrap/READY'
 
 permissions:
   contents: write
+
+concurrency:
+  group: sleepychat-source-import
+  cancel-in-progress: true
 
 jobs:
   complete-source:
@@ -61,7 +66,6 @@ jobs:
             if ($proc.ExitCode -ne 0) { throw "git show failed for $spec : $($proc.StandardError.ReadToEnd())" }
           }
 
-          # Restore every non-binary source/document file from its verified Git blob.
           $sourceBlobs = [ordered]@{
             '.gitignore'                         = '66d2f32a2c941d8bd0ccde0a8b48dcaf7eaeb9cb'
             'BUILD_RELEASE.ps1'                  = '2ea8ca08fa09ae9ead84cb338af13b54c41a496f'
@@ -81,10 +85,8 @@ jobs:
             Write-GitObject $item.Value (Join-Path $stage $item.Key)
           }
 
-          # Restore the exact original runtime-smoke workflow from repository history.
           Write-GitSpec '8919df8bba183fcff22cd1283c0a16bf62af9470:.github/workflows/csharp-runtime-smoke.yml' (Join-Path $stage '.github/workflows/csharp-runtime-smoke.yml')
 
-          # Restore the exact 59,234-byte final WebView2 UI from its intact historical gzip payload.
           $indexPayload = Join-Path $env:RUNNER_TEMP 'sleepychat-index.b64'
           Write-GitSpec '663755c4fccf18bce889e3dea863ce6ce3587760:.bootstrap/index.html.gz.b64' $indexPayload
           $indexBytes = [Convert]::FromBase64String(([IO.File]::ReadAllText($indexPayload)).Trim())
@@ -95,7 +97,6 @@ jobs:
           $output = [IO.File]::Create($indexPath)
           try { $gzip.CopyTo($output) } finally { $output.Dispose(); $gzip.Dispose(); $input.Dispose() }
 
-          # Rebuild the compact, self-contained asset ZIP from the already committed historical transport pieces.
           $assetParts = @(
             @{ Spec = 'f02736d144a90e960a1fc0f20c6aa666bf2797f4:.bootstrap/assets/000.txt'; Name = '000' },
             @{ Spec = '499e415925d20edbe08746b36acdda97379b4590:.bootstrap/assets/001.txt'; Name = '001' },
@@ -115,7 +116,6 @@ jobs:
           [IO.File]::WriteAllBytes($assetZip, $assetBytes)
           Expand-Archive -Path $assetZip -DestinationPath $stage -Force
 
-          # Final package contract: exactly 32 files, all matching the locally verified final repository ZIP.
           $expected = [ordered]@{
             '.github/workflows/csharp-runtime-smoke.yml' = 'ed5beb1c884aa33ff758b0c84f4d4b0601f38d37'
             '.gitignore' = '66d2f32a2c941d8bd0ccde0a8b48dcaf7eaeb9cb'
@@ -161,7 +161,6 @@ jobs:
           }
           if ((Get-Item (Join-Path $stage 'CSharpHost/web/index.html')).Length -ne 59234) { throw 'Final index.html size mismatch.' }
 
-          # Replace all temporary/import content with only the verified final 32-file source tree.
           Get-ChildItem . -Force | Where-Object { $_.Name -ne '.git' } | Remove-Item -Recurse -Force
           Get-ChildItem $stage -Force | ForEach-Object { Copy-Item $_.FullName -Destination . -Recurse -Force }
 
