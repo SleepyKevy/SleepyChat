@@ -1,0 +1,49 @@
+name: Restore SleepyChat Import Index
+
+on:
+  push:
+    branches:
+      - import/sleepychat-1.0.0
+
+permissions:
+  contents: write
+
+jobs:
+  restore-index:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout import branch
+        uses: actions/checkout@v6
+        with:
+          ref: import/sleepychat-1.0.0
+
+      - name: Restore exact index.html
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = '.bootstrap/index.html.gz.b64'
+          if (-not (Test-Path $source)) { throw "Missing staged source: $source" }
+          $b64 = (Get-Content $source -Raw).Trim()
+          $gzBytes = [Convert]::FromBase64String($b64)
+          $input = [IO.MemoryStream]::new($gzBytes)
+          $gzip = [IO.Compression.GZipStream]::new($input, [IO.Compression.CompressionMode]::Decompress)
+          $output = [IO.MemoryStream]::new()
+          $gzip.CopyTo($output)
+          $gzip.Dispose(); $input.Dispose()
+          [IO.Directory]::CreateDirectory('CSharpHost/web') | Out-Null
+          [IO.File]::WriteAllBytes('CSharpHost/web/index.html', $output.ToArray())
+          $output.Dispose()
+          if ((Get-Item 'CSharpHost/web/index.html').Length -lt 50000) { throw 'Restored index.html is unexpectedly small.' }
+          $html = [IO.File]::ReadAllText('CSharpHost/web/index.html')
+          if ($html -notmatch 'SleepyChat 1\.0\.0' -or $html -notmatch '/api/kick-badge-image') { throw 'Restored index.html failed source validation.' }
+
+      - name: Commit restored web entrypoint
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git config user.name 'SleepyChat Import Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add CSharpHost/web/index.html
+          if (git diff --cached --quiet) { exit 0 }
+          git commit -m 'Restore exact SleepyChat web entrypoint'
+          git push origin HEAD:import/sleepychat-1.0.0
