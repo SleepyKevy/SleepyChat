@@ -1,0 +1,180 @@
+name: Finalize SleepyChat 1.0.0 Source
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.bootstrap/FINALIZE'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sleepychat-final-source
+  cancel-in-progress: true
+
+jobs:
+  finalize:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct and verify final source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:RUNNER_TEMP 'sleepychat-final'
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+
+          function Write-GitObject([string]$object, [string]$destination, [bool]$isSpec = $false) {
+            $parent = Split-Path -Parent $destination
+            if ($parent) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+            $psi = [System.Diagnostics.ProcessStartInfo]::new()
+            $psi.FileName = 'git'
+            $psi.UseShellExecute = $false
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
+            if ($isSpec) {
+              [void]$psi.ArgumentList.Add('show')
+              [void]$psi.ArgumentList.Add($object)
+            } else {
+              [void]$psi.ArgumentList.Add('cat-file')
+              [void]$psi.ArgumentList.Add('blob')
+              [void]$psi.ArgumentList.Add($object)
+            }
+            $proc = [System.Diagnostics.Process]::Start($psi)
+            $out = [IO.File]::Create($destination)
+            try { $proc.StandardOutput.BaseStream.CopyTo($out) } finally { $out.Dispose() }
+            $proc.WaitForExit()
+            if ($proc.ExitCode -ne 0) { throw "Git object read failed: $object :: $($proc.StandardError.ReadToEnd())" }
+          }
+
+          function Base64Body([string]$text) {
+            return [Text.RegularExpressions.Regex]::Replace($text, '[^A-Za-z0-9+/]', '')
+          }
+          function CompleteBase64([string]$body) {
+            switch ($body.Length % 4) {
+              0 { return $body }
+              2 { return $body + '==' }
+              3 { return $body + '=' }
+              default { throw "Invalid Base64 body length: $($body.Length)" }
+            }
+          }
+
+          $source = [ordered]@{
+            '.gitignore'                         = '66d2f32a2c941d8bd0ccde0a8b48dcaf7eaeb9cb'
+            'BUILD_RELEASE.ps1'                  = '2ea8ca08fa09ae9ead84cb338af13b54c41a496f'
+            'CSharpHost/AppUtil.cs'              = 'c0d18808540ab70d1fe5beaf9aab5c7b29d5e88d'
+            'CSharpHost/BackendHost.cs'           = '5c7b9d6fc22fd7d2ef13b46c16d4ee2a5dde7943'
+            'CSharpHost/IntegrationConfig.cs'     = '044372e0ac2efd3d945bb8d3d65e62d93d989125'
+            'CSharpHost/MainForm.cs'              = '8f21e66c998d90eaa736f7e25eead7ebfeeb2e62'
+            'CSharpHost/Program.cs'               = 'e79e298f51c1d804177308726d6fc1c73188a356'
+            'CSharpHost/SleepyChat.csproj'        = '9f30428bb755a1fc66f389583b8defc8ebf08021'
+            'CSharpHost/web/manifest.webmanifest' = 'da6ca3b9025bd98c0f596f6dd6b1160cacef0083'
+            'README.md'                           = 'ab7ebd808d51480d3f52cc77b15340ad21d3f13f'
+            'VALIDATION.txt'                      = 'c559cab838d66fb0612a4c91a817a472e3c853c0'
+            'readme.txt'                          = '74b9632950ba1a116adf4b4eb33af10a6f2adf34'
+            'release_notes.txt'                   = '56b4db9eb82aa1f05005508bfda1a7e7dbf5d5ec'
+          }
+          foreach ($item in $source.GetEnumerator()) {
+            Write-GitObject $item.Value (Join-Path $stage $item.Key)
+          }
+
+          Write-GitObject '8919df8bba183fcff22cd1283c0a16bf62af9470:.github/workflows/csharp-runtime-smoke.yml' (Join-Path $stage '.github/workflows/csharp-runtime-smoke.yml') $true
+
+          $uiParts = @(Get-ChildItem '.bootstrap' -Filter 'index-exact.b64.*' -File | Sort-Object Name)
+          if ($uiParts.Count -ne 3) { throw "Expected 3 exact UI chunks, found $($uiParts.Count)." }
+          $uiBody = ($uiParts | ForEach-Object { Base64Body ([IO.File]::ReadAllText($_.FullName)) }) -join ''
+          $uiGzip = [Convert]::FromBase64String((CompleteBase64 $uiBody))
+          $uiGzipPath = Join-Path $env:RUNNER_TEMP 'index.html.gz'
+          [IO.File]::WriteAllBytes($uiGzipPath, $uiGzip)
+          $uiGzipHash = (Get-FileHash $uiGzipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($uiGzipHash -ne '6c32288007aa36f302aee3d232780ea8ffd0a1b4c36ebc565cc7b1416f654efe') { throw "Exact UI payload checksum mismatch: $uiGzipHash" }
+          $input = [IO.MemoryStream]::new($uiGzip)
+          $gzip = [IO.Compression.GZipStream]::new($input, [IO.Compression.CompressionMode]::Decompress)
+          $indexPath = Join-Path $stage 'CSharpHost/web/index.html'
+          New-Item -ItemType Directory -Path (Split-Path -Parent $indexPath) -Force | Out-Null
+          $output = [IO.File]::Create($indexPath)
+          try { $gzip.CopyTo($output) } finally { $output.Dispose(); $gzip.Dispose(); $input.Dispose() }
+
+          $assetSpecs = @(
+            'f02736d144a90e960a1fc0f20c6aa666bf2797f4:.bootstrap/assets/000.txt',
+            '499e415925d20edbe08746b36acdda97379b4590:.bootstrap/assets/001.txt',
+            '6adb79d02200c253c80ea32c6e10c25d403f745f:.bootstrap/assets/002.txt',
+            'f6c1607caf221300eba9ce17dcb0826764e1325a:.bootstrap/assets/003.txt',
+            'adba158d4380e5a36d7f961bd799ff6376f7cf47:.bootstrap/assets/004.txt',
+            '4a1372d03cb9db33c87c110d625cc5a714369f9a:.bootstrap/assets/005-006.txt'
+          )
+          $assetBuilder = [Text.StringBuilder]::new()
+          $n = 0
+          foreach ($spec in $assetSpecs) {
+            $tmp = Join-Path $env:RUNNER_TEMP ("asset-part-$n.txt")
+            Write-GitObject $spec $tmp $true
+            [void]$assetBuilder.Append((Base64Body ([IO.File]::ReadAllText($tmp))))
+            $n++
+          }
+          $assetZipBytes = [Convert]::FromBase64String((CompleteBase64 ($assetBuilder.ToString())))
+          $assetZip = Join-Path $env:RUNNER_TEMP 'sleepychat-assets.zip'
+          [IO.File]::WriteAllBytes($assetZip, $assetZipBytes)
+          Expand-Archive -Path $assetZip -DestinationPath $stage -Force
+
+          $expected = [ordered]@{
+            '.github/workflows/csharp-runtime-smoke.yml' = 'ed5beb1c884aa33ff758b0c84f4d4b0601f38d37'
+            '.gitignore' = '66d2f32a2c941d8bd0ccde0a8b48dcaf7eaeb9cb'
+            'BUILD_RELEASE.ps1' = '2ea8ca08fa09ae9ead84cb338af13b54c41a496f'
+            'CSharpHost/AppUtil.cs' = 'c0d18808540ab70d1fe5beaf9aab5c7b29d5e88d'
+            'CSharpHost/BackendHost.cs' = '5c7b9d6fc22fd7d2ef13b46c16d4ee2a5dde7943'
+            'CSharpHost/IntegrationConfig.cs' = '044372e0ac2efd3d945bb8d3d65e62d93d989125'
+            'CSharpHost/MainForm.cs' = '8f21e66c998d90eaa736f7e25eead7ebfeeb2e62'
+            'CSharpHost/Program.cs' = 'e79e298f51c1d804177308726d6fc1c73188a356'
+            'CSharpHost/SleepyChat.csproj' = '9f30428bb755a1fc66f389583b8defc8ebf08021'
+            'CSharpHost/assets/app-64.png' = '91615ece268157baafbd6543808e881d586bf0f3'
+            'CSharpHost/assets/app-128.png' = '65aaa0f6faacf7c446ab5c4e3527095b3496a75f'
+            'CSharpHost/assets/app-192.png' = '15c43a95e128b75f7a1b1d29c401774986d06cd2'
+            'CSharpHost/assets/app-256.png' = '071862d7f9c3c280807dfce007cba6b3fff870dc'
+            'CSharpHost/assets/app-512.png' = 'a9c2a3b91fb54b743c0d34346ea2e31313c93ebf'
+            'CSharpHost/assets/app.ico' = '3a272feaeb73ec57885b184a71764729610f761e'
+            'CSharpHost/assets/platform-kick.png' = '8709cae8df6c7b5b97bb49def043912f54e5c286'
+            'CSharpHost/assets/platform-twitch.png' = 'be9f150be2c1fa990b328c1c8e5cd17aacb59513'
+            'CSharpHost/assets/sleepychat-mark.webp' = 'f5e30885e70e69792a43c7359a2c5a9c3efe55c9'
+            'CSharpHost/assets/theme-blue-raccoon.png' = 'ab7cf1065481493d812774bb2d58dc2a05b80664'
+            'CSharpHost/assets/theme-green-raccoon.png' = '9f5cd49012cd11989be85b70638d128204223c91'
+            'CSharpHost/assets/theme-pink-raccoon.png' = 'b006351e0a96b24614d5cb0ab2d51a671086cf01'
+            'CSharpHost/assets/theme-purple-raccoon.png' = '6643e32ab67782d86f4a24caca8926d8b28247fe'
+            'CSharpHost/assets/theme-red-raccoon.png' = 'c7f83e74dcdf0b2ed9f187f356a22b72cb0b7bb8'
+            'CSharpHost/web/favicon-64.png' = '91615ece268157baafbd6543808e881d586bf0f3'
+            'CSharpHost/web/favicon-192.png' = '15c43a95e128b75f7a1b1d29c401774986d06cd2'
+            'CSharpHost/web/favicon.ico' = '3a272feaeb73ec57885b184a71764729610f761e'
+            'CSharpHost/web/index.html' = '79454247d3bf906b7bac25d898cf2bb8cd3038ce'
+            'CSharpHost/web/manifest.webmanifest' = 'da6ca3b9025bd98c0f596f6dd6b1160cacef0083'
+            'README.md' = 'ab7ebd808d51480d3f52cc77b15340ad21d3f13f'
+            'VALIDATION.txt' = 'c559cab838d66fb0612a4c91a817a472e3c853c0'
+            'readme.txt' = '74b9632950ba1a116adf4b4eb33af10a6f2adf34'
+            'release_notes.txt' = '56b4db9eb82aa1f05005508bfda1a7e7dbf5d5ec'
+          }
+
+          $files = @(Get-ChildItem $stage -Recurse -File)
+          if ($files.Count -ne 32) { throw "Expected 32 final files, found $($files.Count)." }
+          foreach ($item in $expected.GetEnumerator()) {
+            $path = Join-Path $stage $item.Key
+            if (-not (Test-Path $path)) { throw "Missing final file: $($item.Key)" }
+            $actual = (& git hash-object -- $path).Trim()
+            if ($actual -ne $item.Value) { throw "Git hash mismatch for $($item.Key): expected $($item.Value), got $actual" }
+          }
+
+          Get-ChildItem . -Force | Where-Object { $_.Name -ne '.git' } | Remove-Item -Recurse -Force
+          Get-ChildItem $stage -Force | ForEach-Object { Copy-Item $_.FullName -Destination . -Recurse -Force }
+
+      - name: Commit clean verified source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git config user.name 'SleepyChat Import Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git commit -m 'Complete SleepyChat 1.0.0 source import'
+          git push origin HEAD:main
