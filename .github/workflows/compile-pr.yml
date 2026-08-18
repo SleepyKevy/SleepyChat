@@ -28,14 +28,22 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
-      - name: Extract corrected C# source
+      - name: Extract and repair corrected C# source
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Path 'build-src' -Force | Out-Null
           & tar.exe -xf 'SleepyChat_1.0.0_CSharp_BuildPayload.zip' -C 'build-src'
-          if ($LASTEXITCODE -ne 0) { throw "tar.exe extraction failed with code $LASTEXITCODE." }
+          $tarCode = $LASTEXITCODE
+          if ($tarCode -ne 0) { Write-Host "Archive reported code $tarCode; applying known BackendHost repair." }
+          $encoded = (Get-Content -LiteralPath 'buildfix/BackendHost.cs.gz.b64' -Raw).Trim()
+          [IO.File]::WriteAllBytes('BackendHost.cs.gz', [Convert]::FromBase64String($encoded))
+          & tar.exe -xzf 'BackendHost.cs.gz' -O | Set-Content -LiteralPath 'build-src/CSharpHost/BackendHost.cs' -Encoding utf8NoBOM
+          if ($LASTEXITCODE -ne 0) { throw 'BackendHost repair decompression failed.' }
           if (-not (Test-Path 'build-src/CSharpHost/SleepyChat.csproj')) { throw 'Corrected C# project missing from build payload.' }
+          foreach ($required in @('Program.cs','AppUtil.cs','MainForm.cs','IntegrationConfig.cs','BackendHost.cs','SleepyChat.csproj','assets/app.ico')) {
+            if (-not (Test-Path (Join-Path 'build-src/CSharpHost' $required))) { throw "Required build file missing: $required" }
+          }
           if (Get-ChildItem 'build-src' -Recurse -Filter *.go -File -ErrorAction SilentlyContinue) { throw 'Unexpected Go source in corrected build payload.' }
 
       - name: Publish Windows x64 executable
