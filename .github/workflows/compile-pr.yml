@@ -28,7 +28,7 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
-      - name: Prepare corrected C# source and icon
+      - name: Validate corrected window host and prepare icon
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -64,11 +64,11 @@ jobs:
           if ($iconHash -ne 'f516c3e553e680bb73226364da09f0a356d5f749a5df552b85c8b933af5a5e60') { throw "SleepyChat icon hash mismatch: $iconHash" }
 
           $main = Get-Content -LiteralPath 'directsrc/CSharpHost/MainForm.cs' -Raw
-          foreach ($forbidden in @('ToggleFullscreen','fullscreenRestoreBounds','fullscreenRestoreState','private bool fullscreen','Screen.FromControl(this).Bounds','Screen.FromControl(this).WorkingArea')) {
-            if ($main.Contains($forbidden)) { throw "Legacy fullscreen code still present: $forbidden" }
+          foreach ($forbidden in @('ToggleFullscreen','fullscreenRestoreBounds','fullscreenRestoreState','private bool fullscreen','Keys.F11','AcceleratorKeyPressed','OnWebViewAcceleratorKeyPressed','Screen.FromControl(this).Bounds','Screen.FromControl(this).WorkingArea')) {
+            if ($main.Contains($forbidden)) { throw "Forbidden F11/fullscreen code still present: $forbidden" }
           }
-          foreach ($required in @('AcceleratorKeyPressed','Keys.F11','e.Handled = true','BeginInvoke((Action)ToggleMaximize)','CaptionButtonKind','RestoreGlyph','WS_MAXIMIZEBOX','WS_THICKFRAME')) {
-            if (-not $main.Contains($required)) { throw "Required window/F11 contract missing: $required" }
+          foreach ($required in @('AreBrowserAcceleratorKeysEnabled = false','CaptionButtonKind','RestoreGlyph','WS_MAXIMIZEBOX','WS_MINIMIZEBOX','WS_THICKFRAME','ToggleMaximize')) {
+            if (-not $main.Contains($required)) { throw "Required native-window contract missing: $required" }
           }
           if ($main.Contains('CreateCaptionButton("×"') -or $main.Contains('CreateCaptionButton("□"') -or $main.Contains('CreateCaptionButton("—"')) {
             throw 'Legacy Unicode caption-button glyphs are still present.'
@@ -92,7 +92,7 @@ jobs:
       - name: Upload compiled executable
         uses: actions/upload-artifact@v7
         with:
-          name: SleepyChat-1.0.0-F11-Fixed
+          name: SleepyChat-1.0.0-Native-Maximize
           path: publish/SleepyChat.exe
           if-no-files-found: error
 
