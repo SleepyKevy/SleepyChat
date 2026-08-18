@@ -28,11 +28,12 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
-      - name: Prepare direct corrected C# source
+      - name: Prepare direct corrected C# source and icon
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           if (-not (Test-Path 'directsrc/CSharpHost/SleepyChat.csproj')) { throw 'Direct C# project is missing.' }
+          New-Item -ItemType Directory -Path 'directsrc/CSharpHost/assets' -Force | Out-Null
 
           $backendEncoded = (Get-Content -LiteralPath 'directsrc/BackendHost.cs.gz.b64' -Raw).Trim()
           [IO.File]::WriteAllBytes('BackendHost.cs.gz', [Convert]::FromBase64String($backendEncoded))
@@ -48,7 +49,19 @@ jobs:
           }
           finally { $inputStream.Dispose() }
 
-          foreach ($required in @('Program.cs','AppUtil.cs','MainForm.cs','IntegrationConfig.cs','BackendHost.cs','SleepyChat.csproj')) {
+          $iconParts = 0..4 | ForEach-Object { "directsrc/iconparts/part-{0:D2}.txt" -f $_ }
+          foreach ($part in $iconParts) {
+            if (-not (Test-Path $part)) { throw "Missing icon chunk: $part" }
+          }
+          $iconEncoded = ($iconParts | ForEach-Object { (Get-Content -LiteralPath $_ -Raw).Trim() }) -join ''
+          if ($iconEncoded.Length -ne 48256) { throw "Unexpected icon Base64 length: $($iconEncoded.Length)" }
+          [IO.File]::WriteAllBytes('directsrc/CSharpHost/assets/app.ico', [Convert]::FromBase64String($iconEncoded))
+          $iconHash = (Get-FileHash 'directsrc/CSharpHost/assets/app.ico' -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($iconHash -ne 'f516c3e553e680bb73226364da09f0a356d5f749a5df552b85c8b933af5a5e60') {
+            throw "SleepyChat icon hash mismatch: $iconHash"
+          }
+
+          foreach ($required in @('Program.cs','AppUtil.cs','MainForm.cs','IntegrationConfig.cs','BackendHost.cs','SleepyChat.csproj','assets/app.ico')) {
             if (-not (Test-Path (Join-Path 'directsrc/CSharpHost' $required))) { throw "Required direct source file missing: $required" }
           }
           if (Get-ChildItem 'directsrc' -Recurse -Filter *.go -File -ErrorAction SilentlyContinue) { throw 'Unexpected Go source in corrected direct build.' }
