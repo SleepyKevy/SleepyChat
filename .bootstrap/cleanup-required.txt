@@ -1,1 +1,0 @@
-Temporary bootstrap markers are intentionally excluded from the final 32-file tree.

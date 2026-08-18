@@ -1,1 +1,0 @@
-Finalization is proceeding through direct Git blobs; temporary bootstrap files will be omitted from the final root tree.

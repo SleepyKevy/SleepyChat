@@ -1,1 +1,0 @@
-Final tree target: 32 source files, no temporary importer workflows, no bootstrap staging after completion.

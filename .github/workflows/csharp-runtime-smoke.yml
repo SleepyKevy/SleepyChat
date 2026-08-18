@@ -1,6 +1,9 @@
 name: SleepyChat 1.0.0 Runtime Smoke
 
 on:
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -24,7 +27,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $go = Get-ChildItem . -Recurse -Filter *.go -File -ErrorAction SilentlyContinue
           if ($go) { throw "Unexpected Go source found: $($go.FullName -join ', ')" }
-          $needles = @((('Edge' + 'Profile')), (('ms' + 'edge.exe')), (('Set' + 'Parent(')), (('FirstRun' + 'Bootstrap')), (('BUILD_FIRST' + '_RUN_EXE')))
+          $needles = @(('Edge' + 'Profile'), ('ms' + 'edge.exe'), ('Set' + 'Parent('), ('FirstRun' + 'Bootstrap'), ('BUILD_FIRST' + '_RUN_EXE'))
           $files = Get-ChildItem . -Recurse -File | Where-Object {
             $_.FullName -notmatch '[\\/]\.git[\\/]' -and $_.Extension -in '.cs','.csproj','.html','.js','.css','.md','.txt','.ps1','.yml','.yaml','.webmanifest'
           }

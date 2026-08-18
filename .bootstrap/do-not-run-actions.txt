@@ -1,1 +1,0 @@
-No automatic importer workflow is active. Finalization will use direct Git object assembly.
