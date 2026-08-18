@@ -1,0 +1,77 @@
+name: Compile SleepyChat 1.0.0
+
+on:
+  push:
+    branches:
+      - build/csharp-1.0.0
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout build payload
+        uses: actions/checkout@v6
+
+      - name: Use .NET 8
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Extract corrected C# source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Expand-Archive -LiteralPath 'SleepyChat_1.0.0_CSharp_BuildPayload.zip' -DestinationPath 'build-src' -Force
+          if (-not (Test-Path 'build-src/CSharpHost/SleepyChat.csproj')) { throw 'Corrected C# project missing from build payload.' }
+          if (Get-ChildItem 'build-src' -Recurse -Filter *.go -File -ErrorAction SilentlyContinue) { throw 'Unexpected Go source in corrected build payload.' }
+
+      - name: Publish Windows x64 executable
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet restore 'build-src/CSharpHost/SleepyChat.csproj' -r win-x64
+          if ($LASTEXITCODE -ne 0) { throw 'dotnet restore failed.' }
+          dotnet publish 'build-src/CSharpHost/SleepyChat.csproj' -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true --no-restore -o 'publish'
+          if ($LASTEXITCODE -ne 0) { throw 'dotnet publish failed.' }
+          if (-not (Test-Path 'publish/SleepyChat.exe')) { throw 'SleepyChat.exe was not produced.' }
+
+      - name: Verify executable metadata and backend
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Resolve-Path 'publish/SleepyChat.exe'
+          $v = (Get-Item $exe).VersionInfo
+          if ($v.FileVersion -notlike '1.0.0*') { throw "Unexpected FileVersion: $($v.FileVersion)" }
+          if ($v.ProductVersion -notlike '1.0.0*') { throw "Unexpected ProductVersion: $($v.ProductVersion)" }
+          Add-Type -AssemblyName System.Drawing
+          $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($exe.Path)
+          if ($null -eq $icon) { throw 'Compiled EXE has no embedded application icon.' }
+          $icon.Dispose()
+
+          $proc = Start-Process -FilePath $exe.Path -ArgumentList '--headless' -PassThru
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 40; $i++) {
+              if ($proc.HasExited) { throw "SleepyChat exited early with code $($proc.ExitCode)." }
+              try {
+                $status = Invoke-RestMethod 'http://127.0.0.1:17892/api/status' -TimeoutSec 2
+                if ($status.version -eq '1.0.0' -and $status.host -eq 'csharp-webview2') { $ready = $true; break }
+              } catch { }
+              Start-Sleep -Milliseconds 500
+            }
+            if (-not $ready) { throw 'Corrected C# backend did not become ready.' }
+          }
+          finally {
+            if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+          }
+
+      - name: Upload compiled executable
+        uses: actions/upload-artifact@v7
+        with:
+          name: SleepyChat-1.0.0-Compiled-EXE
+          path: publish/SleepyChat.exe
+          if-no-files-found: error
