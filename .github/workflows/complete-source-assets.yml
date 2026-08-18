@@ -66,9 +66,18 @@ jobs:
             if ($proc.ExitCode -ne 0) { throw "git show failed for $spec : $($proc.StandardError.ReadToEnd())" }
           }
 
-          function Get-CleanBase64([string]$path) {
+          function Get-Base64Body([string]$path) {
             $raw = [IO.File]::ReadAllText($path)
-            return [Text.RegularExpressions.Regex]::Replace($raw, '[^A-Za-z0-9+/=]', '')
+            return [Text.RegularExpressions.Regex]::Replace($raw, '[^A-Za-z0-9+/]', '')
+          }
+
+          function Complete-Base64([string]$body) {
+            switch ($body.Length % 4) {
+              0 { return $body }
+              2 { return $body + '==' }
+              3 { return $body + '=' }
+              default { throw "Invalid Base64 body length: $($body.Length)" }
+            }
           }
 
           $sourceBlobs = [ordered]@{
@@ -94,7 +103,7 @@ jobs:
 
           $indexPayload = Join-Path $env:RUNNER_TEMP 'sleepychat-index.b64'
           Write-GitSpec '663755c4fccf18bce889e3dea863ce6ce3587760:.bootstrap/index.html.gz.b64' $indexPayload
-          $indexB64 = Get-CleanBase64 $indexPayload
+          $indexB64 = Complete-Base64 (Get-Base64Body $indexPayload)
           $indexBytes = [Convert]::FromBase64String($indexB64)
           $input = [IO.MemoryStream]::new($indexBytes)
           $gzip = [IO.Compression.GZipStream]::new($input, [IO.Compression.CompressionMode]::Decompress)
@@ -115,9 +124,10 @@ jobs:
           foreach ($part in $assetParts) {
             $partFile = Join-Path $env:RUNNER_TEMP ("asset-" + $part.Name + '.txt')
             Write-GitSpec $part.Spec $partFile
-            [void]$builder.Append((Get-CleanBase64 $partFile))
+            [void]$builder.Append((Get-Base64Body $partFile))
           }
-          $assetBytes = [Convert]::FromBase64String($builder.ToString())
+          $assetB64 = Complete-Base64 ($builder.ToString())
+          $assetBytes = [Convert]::FromBase64String($assetB64)
           $assetZip = Join-Path $env:RUNNER_TEMP 'sleepychat-assets.zip'
           [IO.File]::WriteAllBytes($assetZip, $assetBytes)
           Expand-Archive -Path $assetZip -DestinationPath $stage -Force
