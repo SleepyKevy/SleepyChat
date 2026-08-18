@@ -335,27 +335,9 @@ internal sealed class MainForm : Form
         core.Settings.IsStatusBarEnabled = false;
         core.Settings.IsZoomControlEnabled = false;
         core.Settings.AreBrowserAcceleratorKeysEnabled = false;
-        webView.AcceleratorKeyPressed += OnWebViewAcceleratorKeyPressed;
         core.NavigationStarting += OnNavigationStarting;
         core.NewWindowRequested += OnNewWindowRequested;
         core.Navigate(BackendHost.BaseUrl);
-    }
-
-    private void OnWebViewAcceleratorKeyPressed(object? sender, CoreWebView2AcceleratorKeyPressedEventArgs e)
-    {
-        if (e.VirtualKey != (uint)Keys.F11)
-            return;
-
-        e.Handled = true;
-
-        if (e.KeyEventKind != CoreWebView2KeyEventKind.KeyDown
-            && e.KeyEventKind != CoreWebView2KeyEventKind.SystemKeyDown)
-            return;
-
-        if (e.PhysicalKeyStatus.WasKeyDown != 0)
-            return;
-
-        BeginInvoke((Action)ToggleMaximize);
     }
 
     private void OnNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
