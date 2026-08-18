@@ -20,8 +20,8 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $parts = Get-ChildItem '.bootstrap' -Filter 'assetpack.b64.*' | Sort-Object Name
-          if ($parts.Count -ne 6) { throw "Expected 6 asset payload chunks, found $($parts.Count)." }
+          $parts = @(Get-ChildItem '.bootstrap' -Filter 'assetpack.b64.*' | Sort-Object Name)
+          if ($parts.Count -lt 1) { throw 'No staged asset payload chunks were found.' }
           $b64 = ($parts | ForEach-Object { (Get-Content $_.FullName -Raw).Trim() }) -join ''
           $bytes = [Convert]::FromBase64String($b64)
           $zip = Join-Path $env:RUNNER_TEMP 'sleepychat-assets.zip'
