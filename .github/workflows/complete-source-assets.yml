@@ -3,96 +3,44 @@ name: Complete SleepyChat Source Assets
 on:
   push:
     branches: [main]
+    paths:
+      - '.bootstrap/READY'
 
 permissions:
   contents: write
 
 jobs:
   complete-assets:
-    if: github.actor != 'github-actions[bot]'
     runs-on: windows-latest
     steps:
       - name: Checkout main
         uses: actions/checkout@v6
 
-      - name: Rebuild SleepyChat asset set
+      - name: Restore staged SleepyChat assets
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          New-Item -ItemType Directory -Force CSharpHost/assets, CSharpHost/web | Out-Null
-
-          $base = 'https://raw.githubusercontent.com/SleepyKevy/SleepySource-2.0/main/CSharpHost/assets'
-          $downloads = @{
-            'app.ico'                    = "$base/app.ico"
-            'sleepychat-mark.webp'       = "$base/sleepysource-mark.webp"
-            'theme-blue-raccoon.png'     = "$base/default.png"
-            'theme-red-raccoon.png'      = "$base/theme-red.png"
-            'theme-purple-raccoon.png'   = "$base/theme-purple.png"
-            'theme-green-raccoon.png'    = "$base/theme-green.png"
-            'theme-pink-raccoon.png'     = "$base/theme-pink.png"
+          $parts = Get-ChildItem '.bootstrap' -Filter 'assetpack.b64.*' | Sort-Object Name
+          if ($parts.Count -ne 6) { throw "Expected 6 asset payload chunks, found $($parts.Count)." }
+          $b64 = ($parts | ForEach-Object { (Get-Content $_.FullName -Raw).Trim() }) -join ''
+          $bytes = [Convert]::FromBase64String($b64)
+          $zip = Join-Path $env:RUNNER_TEMP 'sleepychat-assets.zip'
+          [IO.File]::WriteAllBytes($zip, $bytes)
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne '55915c5af5c2e76e56998e41f98b3716f572daa94a0bdf34cfc9fdf4848c5b32') {
+            throw "Asset payload checksum mismatch: $hash"
           }
-          foreach ($item in $downloads.GetEnumerator()) {
-            Invoke-WebRequest $item.Value -OutFile (Join-Path 'CSharpHost/assets' $item.Key) -UseBasicParsing
-          }
-
-          Add-Type -AssemblyName System.Drawing
-          function Save-ScaledPng([string]$source, [string]$dest, [int]$size) {
-            $img = [System.Drawing.Image]::FromFile((Resolve-Path $source))
-            try {
-              $bmp = New-Object System.Drawing.Bitmap $size, $size
-              try {
-                $g = [System.Drawing.Graphics]::FromImage($bmp)
-                try {
-                  $g.Clear([System.Drawing.Color]::Transparent)
-                  $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-                  $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
-                  $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
-                  $g.DrawImage($img, 0, 0, $size, $size)
-                } finally { $g.Dispose() }
-                $bmp.Save($dest, [System.Drawing.Imaging.ImageFormat]::Png)
-              } finally { $bmp.Dispose() }
-            } finally { $img.Dispose() }
-          }
-
-          foreach ($size in 64,128,192,256,512) {
-            Save-ScaledPng 'CSharpHost/assets/theme-blue-raccoon.png' "CSharpHost/assets/app-$size.png" $size
-          }
-          Copy-Item CSharpHost/assets/app.ico CSharpHost/web/favicon.ico -Force
-          Copy-Item CSharpHost/assets/app-64.png CSharpHost/web/favicon-64.png -Force
-          Copy-Item CSharpHost/assets/app-192.png CSharpHost/web/favicon-192.png -Force
-
-          function New-PlatformPng([string]$path, [string]$text, [string]$hex) {
-            $bmp = New-Object System.Drawing.Bitmap 256, 256
-            try {
-              $g = [System.Drawing.Graphics]::FromImage($bmp)
-              try {
-                $g.Clear([System.Drawing.Color]::Transparent)
-                $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-                $color = [System.Drawing.ColorTranslator]::FromHtml($hex)
-                $brush = New-Object System.Drawing.SolidBrush $color
-                $font = New-Object System.Drawing.Font 'Segoe UI Black', 150, ([System.Drawing.FontStyle]::Bold), ([System.Drawing.GraphicsUnit]::Pixel)
-                try {
-                  $format = New-Object System.Drawing.StringFormat
-                  $format.Alignment = [System.Drawing.StringAlignment]::Center
-                  $format.LineAlignment = [System.Drawing.StringAlignment]::Center
-                  $g.DrawString($text, $font, $brush, (New-Object System.Drawing.RectangleF 0,0,256,256), $format)
-                  $format.Dispose()
-                } finally { $font.Dispose(); $brush.Dispose() }
-              } finally { $g.Dispose() }
-              $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
-            } finally { $bmp.Dispose() }
-          }
-          New-PlatformPng 'CSharpHost/assets/platform-kick.png' 'K' '#53FC18'
-          New-PlatformPng 'CSharpHost/assets/platform-twitch.png' 'T' '#A970FF'
-
-          # Remove temporary transport files from the finished source tree.
-          if (Test-Path '.bootstrap') { Remove-Item '.bootstrap' -Recurse -Force }
+          Expand-Archive -Path $zip -DestinationPath . -Force
 
           $required = @(
-            'CSharpHost/web/index.html',
-            'CSharpHost/web/manifest.webmanifest',
             'CSharpHost/web/favicon.ico',
+            'CSharpHost/web/favicon-64.png',
+            'CSharpHost/web/favicon-192.png',
             'CSharpHost/assets/app.ico',
+            'CSharpHost/assets/app-64.png',
+            'CSharpHost/assets/app-128.png',
+            'CSharpHost/assets/app-192.png',
+            'CSharpHost/assets/app-256.png',
             'CSharpHost/assets/platform-kick.png',
             'CSharpHost/assets/platform-twitch.png',
             'CSharpHost/assets/theme-blue-raccoon.png',
@@ -110,9 +58,10 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          Remove-Item '.bootstrap' -Recurse -Force
+          Remove-Item '.github/workflows/complete-source-assets.yml' -Force
           git config user.name 'SleepyChat Import Bot'
           git config user.email 'actions@users.noreply.github.com'
           git add -A
-          if (git diff --cached --quiet) { exit 0 }
           git commit -m 'Complete SleepyChat 1.0.0 source assets'
           git push origin HEAD:main
