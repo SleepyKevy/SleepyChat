@@ -1,1 +1,1 @@
-SleepyChat 1.0.0 direct-source Windows build trigger 7.
+SleepyChat 1.0.0 direct-source Windows build trigger 8 — no custom F11.
