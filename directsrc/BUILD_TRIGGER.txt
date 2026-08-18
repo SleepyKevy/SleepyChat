@@ -1,0 +1,1 @@
+SleepyChat 1.0.0 direct-source Windows build trigger 1.
