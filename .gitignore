@@ -1,0 +1,13 @@
+.vs/
+.vscode/
+**/bin/
+**/obj/
+dist/
+SleepyChat_Data/
+*.user
+*.suo
+*.pdb
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
