@@ -1,9 +1,6 @@
 name: SleepyChat 1.0.0 Runtime Smoke
 
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 permissions:
