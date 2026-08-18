@@ -49,7 +49,14 @@ jobs:
           }
           finally { $inputStream.Dispose() }
 
-          $iconParts = 0..4 | ForEach-Object { "directsrc/iconparts/part-{0:D2}.txt" -f $_ }
+          $iconParts = @(
+            'directsrc/iconparts/part-00a.txt',
+            'directsrc/iconparts/part-00b.txt',
+            'directsrc/iconparts/part-01.txt',
+            'directsrc/iconparts/part-02.txt',
+            'directsrc/iconparts/part-03.txt',
+            'directsrc/iconparts/part-04.txt'
+          )
           foreach ($part in $iconParts) {
             if (-not (Test-Path $part)) { throw "Missing icon chunk: $part" }
           }
