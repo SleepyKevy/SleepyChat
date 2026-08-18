@@ -1,0 +1,1 @@
+Direct Git-object finalization in progress. Temporary marker; removed by final clean tree commit.
