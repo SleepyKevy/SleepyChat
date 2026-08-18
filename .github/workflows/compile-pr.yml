@@ -79,6 +79,16 @@ jobs:
           }
           if (Get-ChildItem 'directsrc' -Recurse -Filter *.go -File -ErrorAction SilentlyContinue) { throw 'Unexpected Go source in corrected build.' }
 
+      - name: Upload exact C# build source
+        uses: actions/upload-artifact@v7
+        with:
+          name: SleepyChat-1.0.0-Exact-CSharp-Source
+          path: |
+            directsrc/CSharpHost/*.cs
+            directsrc/CSharpHost/*.csproj
+            directsrc/CSharpHost/assets/app.ico
+          if-no-files-found: error
+
       - name: Publish Windows x64 executable
         shell: pwsh
         run: |
