@@ -28,7 +28,7 @@ jobs:
           $fileId = '1pTZKM_WN-JBBLkUqPeaPlJYV-Qsh3p0v'
 
           python -m pip install --disable-pip-version-check --quiet gdown
-          python -m gdown --id $fileId -O $zip
+          python -m gdown $fileId -O $zip
 
           if (-not (Test-Path $zip)) { throw 'SleepyChat source ZIP was not downloaded.' }
           $size = (Get-Item $zip).Length
