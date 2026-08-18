@@ -2,6 +2,7 @@ using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 
 namespace SleepyChat;
@@ -38,11 +39,8 @@ internal sealed class MainForm : Form
     private readonly NotifyIcon trayIcon;
     private readonly ContextMenuStrip trayMenu;
     private readonly Panel titleBar;
-    private readonly Button maximizeButton;
+    private readonly CaptionButton maximizeButton;
     private bool shutdownStarted;
-    private bool fullscreen;
-    private Rectangle fullscreenRestoreBounds;
-    private FormWindowState fullscreenRestoreState;
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(
@@ -101,13 +99,13 @@ internal sealed class MainForm : Form
             BackColor = Color.Transparent
         };
 
-        var closeButton = CreateCaptionButton("×", (_, _) => BeginExit(), isClose: true);
-        maximizeButton = CreateCaptionButton("□", (_, _) => ToggleMaximize());
-        var minimizeButton = CreateCaptionButton("—", (_, _) => WindowState = FormWindowState.Minimized);
+        var closeButton = CreateCaptionButton(CaptionButtonKind.Close, (_, _) => BeginExit());
+        maximizeButton = CreateCaptionButton(CaptionButtonKind.Maximize, (_, _) => ToggleMaximize());
+        var minimizeButton = CreateCaptionButton(CaptionButtonKind.Minimize, (_, _) => WindowState = FormWindowState.Minimized);
         var captionButtons = new FlowLayoutPanel
         {
             Dock = DockStyle.Right,
-            Width = 138,
+            Width = 132,
             Height = 29,
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = false,
@@ -164,30 +162,18 @@ internal sealed class MainForm : Form
         Shown += OnShown;
         FormClosing += OnFormClosing;
         Resize += OnResize;
-        KeyDown += OnKeyDown;
     }
 
-    private static Button CreateCaptionButton(string text, EventHandler onClick, bool isClose = false)
+    private static CaptionButton CreateCaptionButton(CaptionButtonKind kind, EventHandler onClick)
     {
-        var button = new Button
+        var button = new CaptionButton(kind)
         {
-            Width = 46,
+            Width = 44,
             Height = 29,
-            Text = text,
-            FlatStyle = FlatStyle.Flat,
-            TabStop = false,
-            ForeColor = Color.FromArgb(237, 237, 237),
-            BackColor = Color.FromArgb(6, 8, 13),
-            Font = new Font("Segoe UI", text == "—" ? 10F : 11F, FontStyle.Regular, GraphicsUnit.Point),
             Margin = Padding.Empty,
-            Padding = Padding.Empty
+            TabStop = false
         };
-        button.FlatAppearance.BorderSize = 0;
         button.Click += onClick;
-        button.MouseEnter += (_, _) => button.BackColor = isClose
-            ? Color.FromArgb(196, 43, 35)
-            : Color.FromArgb(18, 36, 58);
-        button.MouseLeave += (_, _) => button.BackColor = Color.FromArgb(6, 8, 13);
         return button;
     }
 
@@ -286,7 +272,7 @@ internal sealed class MainForm : Form
             return;
         }
 
-        if (m.Msg == WM_NCHITTEST && !fullscreen && WindowState == FormWindowState.Normal)
+        if (m.Msg == WM_NCHITTEST && WindowState == FormWindowState.Normal)
         {
             base.WndProc(ref m);
             if ((int)m.Result == 1)
@@ -349,9 +335,27 @@ internal sealed class MainForm : Form
         core.Settings.IsStatusBarEnabled = false;
         core.Settings.IsZoomControlEnabled = false;
         core.Settings.AreBrowserAcceleratorKeysEnabled = false;
+        webView.AcceleratorKeyPressed += OnWebViewAcceleratorKeyPressed;
         core.NavigationStarting += OnNavigationStarting;
         core.NewWindowRequested += OnNewWindowRequested;
         core.Navigate(BackendHost.BaseUrl);
+    }
+
+    private void OnWebViewAcceleratorKeyPressed(object? sender, CoreWebView2AcceleratorKeyPressedEventArgs e)
+    {
+        if (e.VirtualKey != (uint)Keys.F11)
+            return;
+
+        e.Handled = true;
+
+        if (e.KeyEventKind != CoreWebView2KeyEventKind.KeyDown
+            && e.KeyEventKind != CoreWebView2KeyEventKind.SystemKeyDown)
+            return;
+
+        if (e.PhysicalKeyStatus.WasKeyDown != 0)
+            return;
+
+        BeginInvoke((Action)ToggleMaximize);
     }
 
     private void OnNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
@@ -399,51 +403,9 @@ internal sealed class MainForm : Form
     {
         if (shutdownStarted)
             return;
-
-        if (fullscreen)
-        {
-            ToggleFullscreen();
-            return;
-        }
-
         WindowState = WindowState == FormWindowState.Maximized
             ? FormWindowState.Normal
             : FormWindowState.Maximized;
-    }
-
-    private void OnKeyDown(object? sender, KeyEventArgs e)
-    {
-        if (e.KeyCode != Keys.F11)
-            return;
-
-        e.Handled = true;
-        e.SuppressKeyPress = true;
-        ToggleFullscreen();
-    }
-
-    private void ToggleFullscreen()
-    {
-        if (shutdownStarted)
-            return;
-
-        if (!fullscreen)
-        {
-            fullscreenRestoreState = WindowState;
-            fullscreenRestoreBounds = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
-            WindowState = FormWindowState.Normal;
-            titleBar.Visible = false;
-            Bounds = Screen.FromControl(this).Bounds;
-            fullscreen = true;
-            return;
-        }
-
-        fullscreen = false;
-        titleBar.Visible = true;
-        WindowState = FormWindowState.Normal;
-        if (!fullscreenRestoreBounds.IsEmpty)
-            Bounds = fullscreenRestoreBounds;
-        if (fullscreenRestoreState == FormWindowState.Maximized)
-            WindowState = FormWindowState.Maximized;
     }
 
     private void OnResize(object? sender, EventArgs e)
@@ -451,7 +413,7 @@ internal sealed class MainForm : Form
         if (shutdownStarted)
             return;
 
-        maximizeButton.Text = WindowState == FormWindowState.Maximized ? "❐" : "□";
+        maximizeButton.RestoreGlyph = WindowState == FormWindowState.Maximized;
 
         if (WindowState == FormWindowState.Minimized)
         {
@@ -540,5 +502,89 @@ internal sealed class MainForm : Form
             applicationIcon.Dispose();
         }
         base.Dispose(disposing);
+    }
+
+    private enum CaptionButtonKind
+    {
+        Minimize,
+        Maximize,
+        Close
+    }
+
+    private sealed class CaptionButton : Button
+    {
+        private readonly CaptionButtonKind kind;
+        private bool restoreGlyph;
+
+        public CaptionButton(CaptionButtonKind kind)
+        {
+            this.kind = kind;
+            FlatStyle = FlatStyle.Flat;
+            FlatAppearance.BorderSize = 0;
+            FlatAppearance.MouseDownBackColor = kind == CaptionButtonKind.Close
+                ? Color.FromArgb(170, 35, 31)
+                : Color.FromArgb(25, 42, 63);
+            FlatAppearance.MouseOverBackColor = kind == CaptionButtonKind.Close
+                ? Color.FromArgb(196, 43, 35)
+                : Color.FromArgb(18, 36, 58);
+            BackColor = Color.FromArgb(6, 8, 13);
+            ForeColor = Color.FromArgb(222, 226, 234);
+            UseVisualStyleBackColor = false;
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+        }
+
+        public bool RestoreGlyph
+        {
+            get => restoreGlyph;
+            set
+            {
+                if (restoreGlyph == value)
+                    return;
+                restoreGlyph = value;
+                Invalidate();
+            }
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            e.Graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+
+            using var pen = new Pen(ForeColor, 1.15F)
+            {
+                StartCap = LineCap.Square,
+                EndCap = LineCap.Square
+            };
+
+            var cx = ClientSize.Width / 2F;
+            var cy = ClientSize.Height / 2F;
+
+            switch (kind)
+            {
+                case CaptionButtonKind.Minimize:
+                    e.Graphics.DrawLine(pen, cx - 5F, cy + 3F, cx + 5F, cy + 3F);
+                    break;
+
+                case CaptionButtonKind.Maximize:
+                    if (!restoreGlyph)
+                    {
+                        e.Graphics.DrawRectangle(pen, cx - 4.5F, cy - 4.5F, 9F, 9F);
+                    }
+                    else
+                    {
+                        e.Graphics.DrawRectangle(pen, cx - 5F, cy - 2.5F, 8F, 8F);
+                        e.Graphics.DrawLine(pen, cx - 2F, cy - 5F, cx + 5F, cy - 5F);
+                        e.Graphics.DrawLine(pen, cx + 5F, cy - 5F, cx + 5F, cy + 2F);
+                        e.Graphics.DrawLine(pen, cx + 3F, cy - 3F, cx + 3F, cy + 2F);
+                    }
+                    break;
+
+                case CaptionButtonKind.Close:
+                    e.Graphics.DrawLine(pen, cx - 4.5F, cy - 4.5F, cx + 4.5F, cy + 4.5F);
+                    e.Graphics.DrawLine(pen, cx + 4.5F, cy - 4.5F, cx - 4.5F, cy + 4.5F);
+                    break;
+            }
+        }
     }
 }
