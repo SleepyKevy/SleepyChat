@@ -21,7 +21,7 @@ jobs:
         shell: python
         run: |
           import base64, gzip, hashlib, pathlib, subprocess
-          parts = [pathlib.Path(f'.bootstrap/exact-ui/{n}.txt') for n in ('000','001','002')]
+          parts = [pathlib.Path(f'.bootstrap/index-exact.b64.{n}') for n in ('000','001','002')]
           raw = ''.join(p.read_text(encoding='utf-8').strip() for p in parts)
           assert len(raw) == 22872, f'base64 length {len(raw)}'
           packed = base64.b64decode(raw, validate=True)
