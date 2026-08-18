@@ -20,19 +20,38 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $source = '.bootstrap/index.html.gz.b64'
           if (-not (Test-Path $source)) { throw "Missing staged source: $source" }
-          $b64 = (Get-Content $source -Raw).Trim()
+
+          # Normalize the staged Base64 text. The original staging write lost
+          # trailing padding, and GitHub/text transport can also introduce CR/LF.
+          $b64 = Get-Content $source -Raw
+          $b64 = [regex]::Replace($b64, '[^A-Za-z0-9+/=]', '')
+          $b64 = $b64.TrimEnd('=')
+          $remainder = $b64.Length % 4
+          if ($remainder -eq 1) { throw "Invalid Base64 payload length: $($b64.Length)" }
+          if ($remainder -gt 0) { $b64 += ('=' * (4 - $remainder)) }
+
           $gzBytes = [Convert]::FromBase64String($b64)
           $input = [IO.MemoryStream]::new($gzBytes)
           $gzip = [IO.Compression.GZipStream]::new($input, [IO.Compression.CompressionMode]::Decompress)
           $output = [IO.MemoryStream]::new()
-          $gzip.CopyTo($output)
-          $gzip.Dispose(); $input.Dispose()
+          try {
+            $gzip.CopyTo($output)
+          }
+          finally {
+            $gzip.Dispose()
+            $input.Dispose()
+          }
+
           [IO.Directory]::CreateDirectory('CSharpHost/web') | Out-Null
           [IO.File]::WriteAllBytes('CSharpHost/web/index.html', $output.ToArray())
           $output.Dispose()
-          if ((Get-Item 'CSharpHost/web/index.html').Length -ne 59234) { throw 'Restored index.html size mismatch.' }
-          $html = [IO.File]::ReadAllText('CSharpHost/web/index.html')
-          if ($html -notmatch 'SleepyChat 1\.0\.0' -or $html -notmatch '/api/twitch-badges' -or $html -notmatch '/api/kick-badge-image') { throw 'Restored UI validation failed.' }
+
+          $restored = Get-Item 'CSharpHost/web/index.html'
+          if ($restored.Length -ne 59234) { throw "Restored index.html size mismatch: $($restored.Length)" }
+          $html = [IO.File]::ReadAllText($restored.FullName)
+          if ($html -notmatch 'SleepyChat 1\.0\.0' -or $html -notmatch '/api/twitch-badges' -or $html -notmatch '/api/kick-badge-image') {
+            throw 'Restored UI validation failed.'
+          }
 
       - name: Commit restored index
         shell: pwsh
