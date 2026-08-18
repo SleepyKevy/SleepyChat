@@ -22,6 +22,10 @@ internal sealed class MainForm : Form
     private const int HTBOTTOMLEFT = 16;
     private const int HTBOTTOMRIGHT = 17;
     private const int ResizeBorder = 7;
+    private const int WS_THICKFRAME = 0x00040000;
+    private const int WS_SYSMENU = 0x00080000;
+    private const int WS_MINIMIZEBOX = 0x00020000;
+    private const int WS_MAXIMIZEBOX = 0x00010000;
     private const int GracefulExitBudgetMs = 1000;
     private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
     private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
@@ -36,6 +40,9 @@ internal sealed class MainForm : Form
     private readonly Panel titleBar;
     private readonly Button maximizeButton;
     private bool shutdownStarted;
+    private bool fullscreen;
+    private Rectangle fullscreenRestoreBounds;
+    private FormWindowState fullscreenRestoreState;
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(
@@ -58,6 +65,8 @@ internal sealed class MainForm : Form
         MinimumSize = new Size(980, 680);
         BackColor = Color.FromArgb(6, 8, 13);
         FormBorderStyle = FormBorderStyle.None;
+        MaximizeBox = true;
+        MinimizeBox = true;
         KeyPreview = true;
         DoubleBuffered = true;
 
@@ -155,6 +164,7 @@ internal sealed class MainForm : Form
         Shown += OnShown;
         FormClosing += OnFormClosing;
         Resize += OnResize;
+        KeyDown += OnKeyDown;
     }
 
     private static Button CreateCaptionButton(string text, EventHandler onClick, bool isClose = false)
@@ -228,11 +238,20 @@ internal sealed class MainForm : Form
         return (Icon)SystemIcons.Application.Clone();
     }
 
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            var parameters = base.CreateParams;
+            parameters.Style |= WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
+            return parameters;
+        }
+    }
+
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
         ApplyNativeWindowPolish();
-        UpdateMaximizedBounds();
     }
 
     private void ApplyNativeWindowPolish()
@@ -267,7 +286,7 @@ internal sealed class MainForm : Form
             return;
         }
 
-        if (m.Msg == WM_NCHITTEST && WindowState == FormWindowState.Normal)
+        if (m.Msg == WM_NCHITTEST && !fullscreen && WindowState == FormWindowState.Normal)
         {
             base.WndProc(ref m);
             if ((int)m.Result == 1)
@@ -380,16 +399,51 @@ internal sealed class MainForm : Form
     {
         if (shutdownStarted)
             return;
+
+        if (fullscreen)
+        {
+            ToggleFullscreen();
+            return;
+        }
+
         WindowState = WindowState == FormWindowState.Maximized
             ? FormWindowState.Normal
             : FormWindowState.Maximized;
     }
 
-    private void UpdateMaximizedBounds()
+    private void OnKeyDown(object? sender, KeyEventArgs e)
     {
-        if (!IsHandleCreated)
+        if (e.KeyCode != Keys.F11)
             return;
-        MaximizedBounds = Screen.FromHandle(Handle).WorkingArea;
+
+        e.Handled = true;
+        e.SuppressKeyPress = true;
+        ToggleFullscreen();
+    }
+
+    private void ToggleFullscreen()
+    {
+        if (shutdownStarted)
+            return;
+
+        if (!fullscreen)
+        {
+            fullscreenRestoreState = WindowState;
+            fullscreenRestoreBounds = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
+            WindowState = FormWindowState.Normal;
+            titleBar.Visible = false;
+            Bounds = Screen.FromControl(this).Bounds;
+            fullscreen = true;
+            return;
+        }
+
+        fullscreen = false;
+        titleBar.Visible = true;
+        WindowState = FormWindowState.Normal;
+        if (!fullscreenRestoreBounds.IsEmpty)
+            Bounds = fullscreenRestoreBounds;
+        if (fullscreenRestoreState == FormWindowState.Maximized)
+            WindowState = FormWindowState.Maximized;
     }
 
     private void OnResize(object? sender, EventArgs e)
@@ -397,7 +451,6 @@ internal sealed class MainForm : Form
         if (shutdownStarted)
             return;
 
-        UpdateMaximizedBounds();
         maximizeButton.Text = WindowState == FormWindowState.Maximized ? "❐" : "□";
 
         if (WindowState == FormWindowState.Minimized)
