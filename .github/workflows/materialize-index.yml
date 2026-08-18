@@ -1,0 +1,51 @@
+name: Materialize exact SleepyChat UI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.bootstrap/MATERIALIZE_INDEX'
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Rebuild exact index.html
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $parts = @(
+            '.bootstrap/exact-ui/000.txt',
+            '.bootstrap/exact-ui/001.txt',
+            '.bootstrap/exact-ui/002.txt'
+          )
+          foreach ($p in $parts) { if (-not (Test-Path $p)) { throw "Missing $p" } }
+          $b64 = ($parts | ForEach-Object { (Get-Content $_ -Raw).Trim() }) -join ''
+          if ($b64.Length -ne 22872) { throw "Unexpected base64 length: $($b64.Length)" }
+          $gzBytes = [Convert]::FromBase64String($b64)
+          $gz = Join-Path $env:RUNNER_TEMP 'index.html.gz'
+          [IO.File]::WriteAllBytes($gz, $gzBytes)
+          $gzHash = (Get-FileHash $gz -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($gzHash -ne '6c32288007aa36f302aee3d232780ea8ffd0a1b4c36ebc565cc7b1416f654efe') { throw "Gzip hash mismatch: $gzHash" }
+          $input = [IO.MemoryStream]::new($gzBytes)
+          $gzip = [IO.Compression.GZipStream]::new($input,[IO.Compression.CompressionMode]::Decompress)
+          $out = [IO.MemoryStream]::new()
+          try { $gzip.CopyTo($out) } finally { $gzip.Dispose(); $input.Dispose() }
+          $bytes = $out.ToArray(); $out.Dispose()
+          if ($bytes.Length -ne 59234) { throw "Unexpected index size: $($bytes.Length)" }
+          New-Item -ItemType Directory -Force 'CSharpHost/web' | Out-Null
+          [IO.File]::WriteAllBytes('CSharpHost/web/index.html',$bytes)
+          $gitHash = (& git hash-object -- 'CSharpHost/web/index.html').Trim()
+          if ($gitHash -ne '79454247d3bf906b7bac25d898cf2bb8cd3038ce') { throw "index Git hash mismatch: $gitHash" }
+      - name: Commit exact UI blob
+        shell: pwsh
+        run: |
+          git config user.name 'SleepyChat Import Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add CSharpHost/web/index.html
+          git commit -m 'Materialize exact SleepyChat 1.0.0 UI'
+          git push origin HEAD:main
