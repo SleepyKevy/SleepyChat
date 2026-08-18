@@ -13,7 +13,7 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - name: Checkout build payload
+      - name: Checkout direct C# source
         uses: actions/checkout@v6
 
       - name: Record build run ID
@@ -28,32 +28,20 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
-      - name: Extract corrected C# source without damaged ZIP member
+      - name: Prepare direct corrected C# source
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          New-Item -ItemType Directory -Path 'build-src/CSharpHost/assets' -Force | Out-Null
+          if (-not (Test-Path 'directsrc/CSharpHost/SleepyChat.csproj')) { throw 'Direct C# project is missing.' }
+          New-Item -ItemType Directory -Path 'directsrc/CSharpHost/assets' -Force | Out-Null
 
-          $members = @(
-            'CSharpHost/Program.cs',
-            'CSharpHost/AppUtil.cs',
-            'CSharpHost/MainForm.cs',
-            'CSharpHost/IntegrationConfig.cs',
-            'CSharpHost/SleepyChat.csproj',
-            'CSharpHost/assets/app.ico'
-          )
-          foreach ($member in $members) {
-            & tar.exe -xf 'SleepyChat_1.0.0_CSharp_BuildPayload.zip' -C 'build-src' $member
-            if ($LASTEXITCODE -ne 0) { throw "Failed to extract required member: $member" }
-          }
-
-          $encoded = (Get-Content -LiteralPath 'buildfix/BackendHost.cs.gz.b64' -Raw).Trim()
-          [IO.File]::WriteAllBytes('BackendHost.cs.gz', [Convert]::FromBase64String($encoded))
+          $backendEncoded = (Get-Content -LiteralPath 'directsrc/BackendHost.cs.gz.b64' -Raw).Trim()
+          [IO.File]::WriteAllBytes('BackendHost.cs.gz', [Convert]::FromBase64String($backendEncoded))
           $inputStream = [IO.File]::OpenRead('BackendHost.cs.gz')
           try {
             $gzipStream = [IO.Compression.GZipStream]::new($inputStream, [IO.Compression.CompressionMode]::Decompress)
             try {
-              $outputStream = [IO.File]::Create('build-src/CSharpHost/BackendHost.cs')
+              $outputStream = [IO.File]::Create('directsrc/CSharpHost/BackendHost.cs')
               try { $gzipStream.CopyTo($outputStream) }
               finally { $outputStream.Dispose() }
             }
@@ -61,18 +49,21 @@ jobs:
           }
           finally { $inputStream.Dispose() }
 
+          $iconEncoded = (Get-Content -LiteralPath 'directsrc/app.ico.b64' -Raw).Trim()
+          [IO.File]::WriteAllBytes('directsrc/CSharpHost/assets/app.ico', [Convert]::FromBase64String($iconEncoded))
+
           foreach ($required in @('Program.cs','AppUtil.cs','MainForm.cs','IntegrationConfig.cs','BackendHost.cs','SleepyChat.csproj','assets/app.ico')) {
-            if (-not (Test-Path (Join-Path 'build-src/CSharpHost' $required))) { throw "Required build file missing: $required" }
+            if (-not (Test-Path (Join-Path 'directsrc/CSharpHost' $required))) { throw "Required direct source file missing: $required" }
           }
-          if (Get-ChildItem 'build-src' -Recurse -Filter *.go -File -ErrorAction SilentlyContinue) { throw 'Unexpected Go source in corrected build payload.' }
+          if (Get-ChildItem 'directsrc' -Recurse -Filter *.go -File -ErrorAction SilentlyContinue) { throw 'Unexpected Go source in corrected direct build.' }
 
       - name: Publish Windows x64 executable
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          dotnet restore 'build-src/CSharpHost/SleepyChat.csproj' -r win-x64
+          dotnet restore 'directsrc/CSharpHost/SleepyChat.csproj' -r win-x64
           if ($LASTEXITCODE -ne 0) { throw 'dotnet restore failed.' }
-          dotnet publish 'build-src/CSharpHost/SleepyChat.csproj' -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true --no-restore -o 'publish'
+          dotnet publish 'directsrc/CSharpHost/SleepyChat.csproj' -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true --no-restore -o 'publish'
           if ($LASTEXITCODE -ne 0) { throw 'dotnet publish failed.' }
           if (-not (Test-Path 'publish/SleepyChat.exe')) { throw 'SleepyChat.exe was not produced.' }
 
