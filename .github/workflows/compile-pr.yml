@@ -32,7 +32,9 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          Expand-Archive -LiteralPath 'SleepyChat_1.0.0_CSharp_BuildPayload.zip' -DestinationPath 'build-src' -Force
+          New-Item -ItemType Directory -Path 'build-src' -Force | Out-Null
+          & tar.exe -xf 'SleepyChat_1.0.0_CSharp_BuildPayload.zip' -C 'build-src'
+          if ($LASTEXITCODE -ne 0) { throw "tar.exe extraction failed with code $LASTEXITCODE." }
           if (-not (Test-Path 'build-src/CSharpHost/SleepyChat.csproj')) { throw 'Corrected C# project missing from build payload.' }
           if (Get-ChildItem 'build-src' -Recurse -Filter *.go -File -ErrorAction SilentlyContinue) { throw 'Unexpected Go source in corrected build payload.' }
 
