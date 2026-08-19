@@ -1,18 +1,47 @@
 --- a/CSharpHost/HostedKickService.cs
 +++ b/CSharpHost/HostedKickService.cs
-@@ -644,15 +644,30 @@
+@@ -224,7 +224,14 @@
+         }
+ 
+         await SaveCredentialAsync();
+-        await SyncEventsAsync(ct);
++        try
++        {
++            await SyncEventsAsync(ct);
++        }
++        catch (Exception ex)
++        {
++            SetError("Kick event sync: " + ex.Message);
++        }
+         StartDeliveryLoops();
+         return State();
+     }
+@@ -289,7 +296,7 @@
+         if (!HasCredential())
+             return State();
+ 
+-        using var result = await PostAuthenticatedAsync("/kick/events/ensure-chat", null, ct, allowNonSuccess: true);
++        using var result = await PostAuthenticatedAsync("/kick/events/sync", null, ct, allowNonSuccess: true);
+         var status = String(result.RootElement, "status");
+         var ready = Bool(result.RootElement, "all_required_subscribed");
+         lock (gate)
+@@ -644,15 +651,30 @@
          state.KickUserID = String(connection, "kick_user_id");
          state.KickUsername = String(connection, "kick_username").Trim().ToLowerInvariant();
          state.Scopes = [];
 -        if (connection.TryGetProperty("scopes", out var scopes) && scopes.ValueKind == JsonValueKind.Array)
-+        if (connection.TryGetProperty("scopes", out var scopes))
-         {
+-        {
 -            foreach (var scope in scopes.EnumerateArray())
-+            if (scopes.ValueKind == JsonValueKind.Array)
-             {
+-            {
 -                var value = scope.GetString()?.Trim() ?? "";
 -                if (value.Length > 0)
 -                    state.Scopes.Add(value);
+-            }
+-        }
++        if (connection.TryGetProperty("scopes", out var scopes))
++        {
++            if (scopes.ValueKind == JsonValueKind.Array)
++            {
 +                foreach (var scope in scopes.EnumerateArray())
 +                {
 +                    var value = scope.GetString()?.Trim() ?? "";
@@ -28,8 +57,8 @@
 +                    if (value.Length > 0)
 +                        state.Scopes.Add(value);
 +                }
-             }
-         }
++            }
++        }
 +        state.Scopes = state.Scopes
 +            .Distinct(StringComparer.OrdinalIgnoreCase)
 +            .ToList();
