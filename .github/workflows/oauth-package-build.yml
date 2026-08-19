@@ -45,25 +45,24 @@ jobs:
             } finally { $gzip.Dispose() }
           } finally { $input.Dispose() }
 
-          foreach ($name in @('send-text.patch','scope-parser.patch')) {
-            $b64Path = ".build/$name.gz.b64"
-            if (-not (Test-Path $b64Path)) {
-              if ($name -eq 'scope-parser.patch') { continue }
-              throw "$name is missing."
-            }
-            $gz = Join-Path $env:RUNNER_TEMP "$name.gz"
-            $patch = Join-Path $env:RUNNER_TEMP $name
-            [IO.File]::WriteAllBytes($gz, [Convert]::FromBase64String((Get-Content $b64Path -Raw)))
-            $input = [IO.File]::OpenRead($gz)
+          $sendB64 = Get-Content '.build/send-text.patch.gz.b64' -Raw
+          $sendGz = Join-Path $env:RUNNER_TEMP 'send-text.patch.gz'
+          $sendPatch = Join-Path $env:RUNNER_TEMP 'send-text.patch'
+          [IO.File]::WriteAllBytes($sendGz, [Convert]::FromBase64String($sendB64))
+          $input = [IO.File]::OpenRead($sendGz)
+          try {
+            $gzip = New-Object IO.Compression.GZipStream($input, [IO.Compression.CompressionMode]::Decompress)
             try {
-              $gzip = New-Object IO.Compression.GZipStream($input, [IO.Compression.CompressionMode]::Decompress)
-              try {
-                $output = [IO.File]::Create($patch)
-                try { $gzip.CopyTo($output) } finally { $output.Dispose() }
-              } finally { $gzip.Dispose() }
-            } finally { $input.Dispose() }
-            git apply --whitespace=nowarn $patch
-            if ($LASTEXITCODE -ne 0) { throw "$name failed to apply." }
+              $output = [IO.File]::Create($sendPatch)
+              try { $gzip.CopyTo($output) } finally { $output.Dispose() }
+            } finally { $gzip.Dispose() }
+          } finally { $input.Dispose() }
+          git apply --whitespace=nowarn $sendPatch
+          if ($LASTEXITCODE -ne 0) { throw 'send-text.patch failed to apply.' }
+
+          if (Test-Path '.build/scope-parser.patch') {
+            git apply --whitespace=nowarn '.build/scope-parser.patch'
+            if ($LASTEXITCODE -ne 0) { throw 'scope-parser.patch failed to apply.' }
           }
 
           $hosted = [IO.File]::ReadAllText('CSharpHost/HostedKickService.cs')
