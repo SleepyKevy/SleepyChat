@@ -1,0 +1,141 @@
+name: SleepyChat Update Checker Build
+
+on:
+  pull_request:
+    branches: [update-checker-base-20260818]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v6
+
+      - name: Use .NET 8
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Apply working SleepyChat patches
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $parts = Get-ChildItem '.build/oauth-patch.part*' -File | Sort-Object Name
+          if (-not $parts) { throw 'OAuth patch chunks are missing.' }
+          $zip = Join-Path $env:RUNNER_TEMP 'oauth-patch.zip'
+          [IO.File]::WriteAllBytes($zip, [Convert]::FromBase64String((($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join '')))
+          Expand-Archive -Path $zip -DestinationPath . -Force
+          Remove-Item 'CSharpHost/IntegrationConfig.cs' -Force -ErrorAction SilentlyContinue
+
+          function Expand-GzipBase64([string]$source, [string]$destination) {
+            $gz = Join-Path $env:RUNNER_TEMP ([IO.Path]::GetRandomFileName())
+            [IO.File]::WriteAllBytes($gz, [Convert]::FromBase64String((Get-Content $source -Raw)))
+            $input = [IO.File]::OpenRead($gz)
+            try {
+              $gzip = New-Object IO.Compression.GZipStream($input, [IO.Compression.CompressionMode]::Decompress)
+              try {
+                $output = [IO.File]::Create($destination)
+                try { $gzip.CopyTo($output) } finally { $output.Dispose() }
+              } finally { $gzip.Dispose() }
+            } finally { $input.Dispose() }
+          }
+
+          Expand-GzipBase64 '.build/shared-hostedkick.gz.b64' 'CSharpHost/HostedKickService.cs'
+          $sendPatch = Join-Path $env:RUNNER_TEMP 'send-text.patch'
+          Expand-GzipBase64 '.build/send-text.patch.gz.b64' $sendPatch
+          git apply --whitespace=nowarn $sendPatch
+          if ($LASTEXITCODE -ne 0) { throw 'send-text.patch failed.' }
+          git apply --whitespace=nowarn '.build/scope-parser.patch'
+          if ($LASTEXITCODE -ne 0) { throw 'scope-parser.patch failed.' }
+
+          Expand-GzipBase64 '.build/update-backendhost.gz.b64' 'CSharpHost/BackendHost.cs'
+          Expand-GzipBase64 '.build/update-service.gz.b64' 'CSharpHost/UpdateService.cs'
+
+          $hosted = [IO.File]::ReadAllText('CSharpHost/HostedKickService.cs')
+          $backend = [IO.File]::ReadAllText('CSharpHost/BackendHost.cs')
+          $updates = [IO.File]::ReadAllText('CSharpHost/UpdateService.cs')
+          foreach ($needle in @('JsonValueKind.String','chat:write','SendKickChatAsync','https://sleepysource-api.sleepyservices.workers.dev')) {
+            if (-not $hosted.Contains($needle)) { throw "Kick marker missing: $needle" }
+          }
+          foreach ($needle in @('/api/kick/chat/send','/api/update/check','/api/update/open')) {
+            if (-not $backend.Contains($needle)) { throw "Backend route missing: $needle" }
+          }
+          if (-not $updates.Contains('https://github.com/SleepyKevy/SleepyChat') -or -not $updates.Contains('releases/latest')) { throw 'Update service GitHub target missing.' }
+
+      - name: Generate full-size transparent icon
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install --disable-pip-version-check pillow
+          @'
+          from pathlib import Path
+          from PIL import Image
+          root=Path('CSharpHost')
+          mark=Image.open(root/'assets'/'theme-blue-raccoon.png').convert('RGBA')
+          box=mark.getbbox()
+          if box: mark=mark.crop(box)
+          scale=min(470/mark.width,470/mark.height)
+          mark=mark.resize((max(1,round(mark.width*scale)),max(1,round(mark.height*scale))),Image.Resampling.LANCZOS)
+          canvas=Image.new('RGBA',(512,512),(0,0,0,0))
+          canvas.alpha_composite(mark,((512-mark.width)//2,(512-mark.height)//2))
+          for s in (64,128,192,256,512): canvas.resize((s,s),Image.Resampling.LANCZOS).save(root/'assets'/f'app-{s}.png')
+          canvas.save(root/'assets'/'app.ico',format='ICO',sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
+          canvas.resize((64,64),Image.Resampling.LANCZOS).save(root/'web'/'favicon-64.png')
+          canvas.resize((192,192),Image.Resampling.LANCZOS).save(root/'web'/'favicon-192.png')
+          canvas.save(root/'web'/'favicon.ico',format='ICO',sizes=[(16,16),(32,32),(48,48),(64,64)])
+          '@ | python -
+
+      - name: Validate JavaScript
+        shell: pwsh
+        run: |
+          $html = [IO.File]::ReadAllText('CSharpHost/web/index.html')
+          $scripts = [regex]::Matches($html, '(?is)<script(?:\s[^>]*)?>(.*?)</script>')
+          $js = Join-Path $env:RUNNER_TEMP 'sleepychat-inline.js'
+          [IO.File]::WriteAllText($js, (($scripts | ForEach-Object { $_.Groups[1].Value }) -join "`n"))
+          node --check $js
+          if ($LASTEXITCODE -ne 0) { throw 'JavaScript validation failed.' }
+
+      - name: Publish Windows x64
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet restore CSharpHost/SleepyChat.csproj -r win-x64
+          dotnet publish CSharpHost/SleepyChat.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true --no-restore -o final-dist
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path 'final-dist/SleepyChat.exe')) { throw 'Publish failed.' }
+          $v=(Get-Item 'final-dist/SleepyChat.exe').VersionInfo
+          if ($v.FileVersion -notlike '1.0.0*' -or $v.ProductVersion -notlike '1.0.0*') { throw 'Wrong EXE version.' }
+
+      - name: Runtime smoke test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base='http://127.0.0.1:17892'
+          $proc=Start-Process -FilePath (Resolve-Path 'final-dist/SleepyChat.exe') -ArgumentList '--headless' -PassThru
+          try {
+            $ready=$false
+            for($i=0;$i -lt 50;$i++){
+              if($proc.HasExited){throw "SleepyChat exited early: $($proc.ExitCode)"}
+              try{$s=Invoke-RestMethod "$base/api/status" -TimeoutSec 2;if($s.version -eq '1.0.0'){$ready=$true;break}}catch{}
+              Start-Sleep -Milliseconds 500
+            }
+            if(-not $ready){throw 'Backend did not become ready.'}
+            $kick=Invoke-RestMethod "$base/api/kick-config" -TimeoutSec 5
+            if($kick.api_base -ne 'https://sleepysource-api.sleepyservices.workers.dev'){throw 'Wrong Kick API base.'}
+            try{Invoke-WebRequest "$base/api/kick/chat/send" -Method Post -ContentType 'application/json' -Body '{"content":"smoke"}' -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop|Out-Null}catch{if([int]$_.Exception.Response.StatusCode -ne 400){throw}}
+            $update=Invoke-RestMethod "$base/api/update/check" -TimeoutSec 10
+            if($update.current_version -ne '1.0.0'){throw 'Update checker returned wrong current version.'}
+            if($update.repository_url -ne 'https://github.com/SleepyKevy/SleepyChat'){throw 'Update checker returned wrong repository.'}
+          } finally {
+            if($proc -and -not $proc.HasExited){Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue}
+          }
+
+      - name: Upload verified build
+        uses: actions/upload-artifact@v7
+        with:
+          name: SleepyChat-1.0.0-Update-Checker-Windows-x64
+          path: final-dist/
+          if-no-files-found: error
