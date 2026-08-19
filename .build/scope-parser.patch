@@ -65,11 +65,9 @@
          state.CanSendChat = state.Scopes.Any(
              x => x.Equals("chat:write", StringComparison.OrdinalIgnoreCase));
      }
-diff --git a/CSharpHost/MainForm.cs b/CSharpHost/MainForm.cs
-index 8f21e66..f8e4a31 100644
 --- a/CSharpHost/MainForm.cs
 +++ b/CSharpHost/MainForm.cs
-@@ -23,10 +23,6 @@ internal sealed class MainForm : Form
+@@ -23,10 +23,6 @@
      private const int HTBOTTOMLEFT = 16;
      private const int HTBOTTOMRIGHT = 17;
      private const int ResizeBorder = 7;
@@ -80,7 +78,7 @@ index 8f21e66..f8e4a31 100644
      private const int GracefulExitBudgetMs = 1000;
      private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
      private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
-@@ -76,7 +72,8 @@ internal sealed class MainForm : Form
+@@ -76,7 +72,8 @@
              Dock = DockStyle.Top,
              Height = 30,
              BackColor = Color.FromArgb(6, 8, 13),
@@ -90,7 +88,7 @@ index 8f21e66..f8e4a31 100644
          };
  
          var titleIcon = new PictureBox
-@@ -138,7 +135,8 @@ internal sealed class MainForm : Form
+@@ -138,7 +135,8 @@
              Dock = DockStyle.Fill,
              DefaultBackgroundColor = Color.FromArgb(6, 8, 13),
              AllowExternalDrop = false,
@@ -100,7 +98,7 @@ index 8f21e66..f8e4a31 100644
          };
  
          Controls.Add(webView);
-@@ -224,17 +222,6 @@ internal sealed class MainForm : Form
+@@ -224,15 +222,6 @@
          return (Icon)SystemIcons.Application.Clone();
      }
  
@@ -113,11 +111,10 @@ index 8f21e66..f8e4a31 100644
 -            return parameters;
 -        }
 -    }
--
+ 
      protected override void OnHandleCreated(EventArgs e)
      {
-         base.OnHandleCreated(e);
-@@ -335,6 +322,8 @@ internal sealed class MainForm : Form
+@@ -335,6 +324,8 @@
          core.Settings.IsStatusBarEnabled = false;
          core.Settings.IsZoomControlEnabled = false;
          core.Settings.AreBrowserAcceleratorKeysEnabled = false;
