@@ -34,6 +34,7 @@ jobs:
           Remove-Item '.build' -Recurse -Force
           Remove-Item '.github/workflows/code-audit-refactor-build.yml' -Force -ErrorAction SilentlyContinue
           Remove-Item '.github/workflows/publish-release-once.yml' -Force -ErrorAction SilentlyContinue
+          Remove-Item '__binary_probe.txt' -Force -ErrorAction SilentlyContinue
           Remove-Item 'CSharpHost/assets/app-64.png' -Force -ErrorAction SilentlyContinue
           Remove-Item 'CSharpHost/assets/app-192.png' -Force -ErrorAction SilentlyContinue
           Remove-Item 'CSharpHost/assets/sleepychat-mark.webp' -Force -ErrorAction SilentlyContinue
