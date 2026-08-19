@@ -19,12 +19,12 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout release source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Use .NET 8
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 8.0.x
 
@@ -33,10 +33,16 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           $bootstrap = '.release/bootstrap-v1.0.0'
           $finalSha = (git rev-parse HEAD).Trim()
 
           if (Test-Path $bootstrap) {
+            # Preserve release-infrastructure fixes that were made after the RC1
+            # source-text bundle was created.
+            $smokeWorkflowBackup = Join-Path $env:RUNNER_TEMP 'csharp-runtime-smoke.yml'
+            Copy-Item '.github/workflows/csharp-runtime-smoke.yml' $smokeWorkflowBackup -Force
+
             $textParts = @(Get-ChildItem '.release-text-assets' -Filter 'text.part*.b64' -File | Sort-Object Name)
             if ($textParts.Count -eq 0) { throw 'Release source-text bundle parts are missing.' }
 
@@ -49,6 +55,7 @@ jobs:
               throw "Release source-text bundle hash mismatch: $textHash"
             }
             Expand-Archive -Path $textBundlePath -DestinationPath (Get-Location) -Force
+            Copy-Item $smokeWorkflowBackup '.github/workflows/csharp-runtime-smoke.yml' -Force
 
             $parts = @(Get-ChildItem '.release-assets' -Filter 'bundle.part*.b64' -File | Sort-Object Name)
             if ($parts.Count -eq 0) { throw 'Release asset bundle parts are missing.' }
@@ -86,7 +93,6 @@ jobs:
               if ($actual -ne $entry.Value) { throw "Release asset hash mismatch: $($entry.Key)" }
             }
 
-            # Keep manifest/favicon PNGs aligned with the corrected Windows icon.
             Add-Type -AssemblyName System.Drawing
             $ico = [System.Drawing.Icon]::new((Resolve-Path 'CSharpHost/assets/app.ico').Path, 128, 128)
             $sourceBitmap = $ico.ToBitmap()
@@ -128,6 +134,10 @@ jobs:
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git add -A
             git commit -m 'Finalize SleepyChat 1.0.0 release assets'
+
+            # Main can move while this Windows build is running. Replay the
+            # release finalization commit on top of the newest main before push.
+            git pull --rebase origin main
             git push origin HEAD:main
             $finalSha = (git rev-parse HEAD).Trim()
           }
@@ -199,7 +209,7 @@ jobs:
           "Source SHA256: $srcHash" >> $env:GITHUB_STEP_SUMMARY
 
       - name: Save verified release packages as workflow artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: SleepyChat-1.0.0-Release
           path: |
