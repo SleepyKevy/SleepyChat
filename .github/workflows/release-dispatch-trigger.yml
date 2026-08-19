@@ -1,0 +1,19 @@
+name: Trigger SleepyChat 1.0.0 Release
+
+on:
+  pull_request_target:
+    types: [opened]
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'release-trigger-v1.0.0'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch official release workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run release-v1.0.0.yml --repo "$GITHUB_REPOSITORY" --ref main
