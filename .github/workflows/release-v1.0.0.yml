@@ -19,11 +19,64 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: main
+          fetch-depth: 0
 
       - name: Use .NET 8
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 8.0.x
+
+      - name: Repair icon resources and persist to main
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Write-PngIcon([string]$pngPath, [string]$icoPath, [int]$size) {
+            $png = [IO.File]::ReadAllBytes($pngPath)
+            if ($png.Length -lt 8 -or $png[0] -ne 0x89 -or $png[1] -ne 0x50 -or $png[2] -ne 0x4E -or $png[3] -ne 0x47) {
+              throw "Not a PNG: $pngPath"
+            }
+            $w = if ($size -ge 256) { [byte]0 } else { [byte]$size }
+            $h = if ($size -ge 256) { [byte]0 } else { [byte]$size }
+            $stream = [IO.MemoryStream]::new()
+            $writer = [IO.BinaryWriter]::new($stream)
+            $writer.Write([UInt16]0)
+            $writer.Write([UInt16]1)
+            $writer.Write([UInt16]1)
+            $writer.Write($w)
+            $writer.Write($h)
+            $writer.Write([byte]0)
+            $writer.Write([byte]0)
+            $writer.Write([UInt16]1)
+            $writer.Write([UInt16]32)
+            $writer.Write([UInt32]$png.Length)
+            $writer.Write([UInt32]22)
+            $writer.Write($png)
+            $writer.Flush()
+            $ico = $stream.ToArray()
+            $writer.Dispose()
+            $stream.Dispose()
+            [IO.File]::WriteAllBytes($icoPath, $ico)
+          }
+
+          Write-PngIcon 'CSharpHost\assets\app-256.png' 'CSharpHost\assets\app.ico' 256
+          Write-PngIcon 'CSharpHost\web\favicon-192.png' 'CSharpHost\web\favicon.ico' 192
+          foreach ($path in @('CSharpHost\assets\app.ico','CSharpHost\web\favicon.ico')) {
+            $bytes = [IO.File]::ReadAllBytes($path)
+            if ($bytes.Length -lt 1000 -or $bytes[0] -ne 0 -or $bytes[1] -ne 0 -or $bytes[2] -ne 1 -or $bytes[3] -ne 0) {
+              throw "Generated ICO validation failed: $path"
+            }
+          }
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add CSharpHost/assets/app.ico CSharpHost/web/favicon.ico
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m 'Repair SleepyChat icon resources [skip ci]'
+            if ($LASTEXITCODE -ne 0) { throw 'Could not commit repaired icon resources.' }
+            git push origin HEAD:main
+            if ($LASTEXITCODE -ne 0) { throw 'Could not push repaired icon resources to main.' }
+          }
 
       - name: Package clean source ZIP
         shell: pwsh
@@ -41,6 +94,17 @@ jobs:
           $files = @(Get-ChildItem $wrapper -Recurse -File -Force)
           if ($files.Count -ne 45) { throw "Source package should contain exactly 45 files; found $($files.Count)." }
           Compress-Archive -Path $wrapper -DestinationPath 'SleepyChat_1.0.0_Source.zip' -CompressionLevel Optimal -Force
+
+      - name: Pin .NET 8 SDK
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sdk8 = @(dotnet --list-sdks | ForEach-Object { if ($_ -match '^(8\.\d+\.\d+)') { $Matches[1] } }) | Select-Object -Last 1
+          if (-not $sdk8) { throw '.NET 8 SDK was not found after setup.' }
+          @{ sdk = @{ version = $sdk8; rollForward = 'latestPatch'; allowPrerelease = $false } } | ConvertTo-Json -Depth 4 | Set-Content 'global.json' -Encoding utf8
+          $active = (dotnet --version).Trim()
+          if (-not $active.StartsWith('8.')) { throw "Expected .NET 8, got $active" }
+          Write-Host "Pinned .NET SDK $active"
 
       - name: Build Windows x64
         shell: pwsh
@@ -94,7 +158,8 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           gh release view v1.0.0 --repo $env:GITHUB_REPOSITORY *> $null
-          if ($LASTEXITCODE -eq 0) {
+          $exists = $LASTEXITCODE -eq 0
+          if ($exists) {
             gh release delete v1.0.0 --repo $env:GITHUB_REPOSITORY --cleanup-tag --yes
             if ($LASTEXITCODE -ne 0) { throw 'Could not replace existing v1.0.0 release.' }
           }
