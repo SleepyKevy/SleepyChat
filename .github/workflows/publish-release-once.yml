@@ -32,18 +32,13 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $zip = Join-Path $env:RUNNER_TEMP 'SleepyChat_1.0.0_Source.zip'
-          $urls = @(
-            'https://drive.usercontent.google.com/download?id=1pTZKM_WN-JBBLkUqPeaPlJYV-Qsh3p0v&export=download&confirm=t',
-            'https://drive.google.com/uc?export=download&id=1pTZKM_WN-JBBLkUqPeaPlJYV-Qsh3p0v&confirm=t'
-          )
-          $ok = $false
-          foreach ($url in $urls) {
-            try {
-              Invoke-WebRequest -Uri $url -OutFile $zip -MaximumRedirection 10 -UseBasicParsing
-              if ((Test-Path $zip) -and (Get-Item $zip).Length -gt 10000000) { $ok = $true; break }
-            } catch { Write-Host 'Staging URL failed; trying fallback.' }
-          }
-          if (-not $ok) { throw 'Exact SleepyChat source ZIP could not be downloaded.' }
+          $fileId = '1pTZKM_WN-JBBLkUqPeaPlJYV-Qsh3p0v'
+          python -m pip install --disable-pip-version-check --quiet gdown
+          python -m gdown $fileId -O $zip
+          if ($LASTEXITCODE -ne 0) { throw 'gdown failed to download the exact source ZIP.' }
+          if (-not (Test-Path $zip)) { throw 'SleepyChat source ZIP was not downloaded.' }
+          $size = (Get-Item $zip).Length
+          if ($size -lt 10000000) { throw "Downloaded source ZIP is unexpectedly small: $size bytes" }
           $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($hash -ne 'fd0d8e6e60e46a72c834efcdd0b4c1ef0b8d3e57519599fca010861b4a7d5ee7') { throw "Source ZIP hash mismatch: $hash" }
           "SOURCE_ZIP=$zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
