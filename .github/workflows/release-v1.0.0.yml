@@ -110,7 +110,33 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          ./BUILD_RELEASE.ps1
+          $project = 'CSharpHost\SleepyChat.csproj'
+          $out = 'dist\SleepyChat 1.0.0'
+          if (Test-Path $out) { Remove-Item $out -Recurse -Force }
+          New-Item -ItemType Directory -Path $out -Force | Out-Null
+          dotnet restore $project -r win-x64
+          if ($LASTEXITCODE -ne 0) { throw 'dotnet restore failed.' }
+          dotnet publish $project -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true --no-restore -o $out
+          if ($LASTEXITCODE -ne 0) { throw 'dotnet publish failed.' }
+
+          # Keep standalone web icon files beside the published single-file app.
+          New-Item -ItemType Directory -Path (Join-Path $out 'web') -Force | Out-Null
+          Copy-Item 'CSharpHost\web\favicon.ico' (Join-Path $out 'web\favicon.ico') -Force
+          New-Item -ItemType Directory -Path (Join-Path $out 'assets') -Force | Out-Null
+          if (-not (Test-Path (Join-Path $out 'assets\app.ico'))) {
+            Copy-Item 'CSharpHost\assets\app.ico' (Join-Path $out 'assets\app.ico') -Force
+          }
+
+          foreach ($relative in @(
+            'SleepyChat.exe','web\index.html','web\css\app.css','web\css\ui-polish.css','web\js\app.js',
+            'web\favicon.ico','assets\app.ico','assets\platform-kick.png','assets\platform-twitch.png'
+          )) {
+            if (-not (Test-Path (Join-Path $out $relative))) { throw "Published file missing: $relative" }
+          }
+          $versionInfo = (Get-Item (Join-Path $out 'SleepyChat.exe')).VersionInfo
+          if ($versionInfo.FileVersion -notlike '1.0.0*' -or $versionInfo.ProductVersion -notlike '1.0.0*') {
+            throw "Unexpected EXE version: $($versionInfo.FileVersion) / $($versionInfo.ProductVersion)"
+          }
 
       - name: Runtime smoke test
         shell: pwsh
