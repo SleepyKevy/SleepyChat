@@ -3,6 +3,8 @@ name: Fix SleepyChat 1.0.0 Public Release
 on:
   push:
     branches: [main]
+    paths:
+      - '.github/workflows/fix-public-release.yml'
 
 permissions:
   contents: write
@@ -57,11 +59,8 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $out = 'dist/SleepyChat 1.0.0'
 
-          # Runtime smoke testing can create this folder. It must never ship.
           $data = Join-Path $out 'SleepyChat_Data'
           if (Test-Path $data) { Remove-Item $data -Recurse -Force }
-
-          # WebView2 package documentation is developer-only clutter.
           Get-ChildItem $out -Filter 'Microsoft.Web.WebView2.*.xml' -File -ErrorAction SilentlyContinue | Remove-Item -Force
 
           Copy-Item 'BUILD_INFO.txt' $out -Force
@@ -77,12 +76,8 @@ jobs:
             if (-not (Test-Path (Join-Path $out $required))) { throw "Required public package entry missing: $required" }
           }
 
-          if (Get-ChildItem $out -Filter 'Microsoft.Web.WebView2.*.xml' -File -ErrorAction SilentlyContinue) {
-            throw 'WebView2 XML documentation files remain in public package.'
-          }
-          if (Test-Path (Join-Path $out 'SleepyChat_Data')) {
-            throw 'SleepyChat_Data remains in public package.'
-          }
+          if (Get-ChildItem $out -Filter 'Microsoft.Web.WebView2.*.xml' -File -ErrorAction SilentlyContinue) { throw 'WebView2 XML documentation files remain in public package.' }
+          if (Test-Path (Join-Path $out 'SleepyChat_Data')) { throw 'SleepyChat_Data remains in public package.' }
 
           $zip = 'SleepyChat_1.0.0_Public.zip'
           if (Test-Path $zip) { Remove-Item $zip -Force }
@@ -110,6 +105,17 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           gh release upload v1.0.0 SleepyChat_1.0.0_Public.zip --clobber --repo $env:GITHUB_REPOSITORY
+
+      - name: Record successful cleanup
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sha = (Get-FileHash 'SleepyChat_1.0.0_Public.zip' -Algorithm SHA256).Hash.ToLowerInvariant()
+          $body = "SleepyChat 1.0.0 public release verified clean`nsha256=$sha`nentries=SleepyChat.exe, assets/, web/, BUILD_INFO.txt, readme.txt, release_notes.txt`nremoved=SleepyChat_Data/, Microsoft.Web.WebView2.*.xml`n"
+          $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($body))
+          gh api --method PUT "repos/$env:GITHUB_REPOSITORY/contents/.github/release-public-clean.txt" -f message='Record clean public release [skip ci]' -f content=$encoded -f branch=main | Out-Null
 
       - name: Upload clean package artifact
         uses: actions/upload-artifact@v7
