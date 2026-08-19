@@ -1,2 +1,3 @@
 Request official SleepyChat 1.0.0 release workflow dispatch.
 Dispatch attempt: PR synchronize trigger.
+Smoke rerun after deterministic asset-copy and .NET 8 SDK fixes.
