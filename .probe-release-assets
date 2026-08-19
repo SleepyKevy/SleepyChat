@@ -1,1 +1,1 @@
-probe existing v1.0.0 release assets
+verify published v1.0.0 release assets after successful release
