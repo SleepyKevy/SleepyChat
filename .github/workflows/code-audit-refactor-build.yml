@@ -3,6 +3,8 @@ name: SleepyChat Code Audit Refactor Build
 on:
   push:
     branches: [code-audit-refactor-20260818]
+  pull_request:
+    branches: [ui-polish-build-20260818]
   workflow_dispatch:
 
 permissions:
