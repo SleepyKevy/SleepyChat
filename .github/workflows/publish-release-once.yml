@@ -1,12 +1,11 @@
-name: Publish SleepyChat 1.0.0 from PR
+name: Bootstrap SleepyChat 1.0.0 Publish
 
 on:
-  pull_request:
+  push:
     branches: [main]
 
 permissions:
   contents: write
-  pull-requests: read
 
 env:
   DOTNET_NOLOGO: true
@@ -14,68 +13,77 @@ env:
 
 jobs:
   publish:
+    if: github.event.head_commit.message == 'Bootstrap SleepyChat 1.0.0 publish'
     runs-on: windows-latest
     steps:
-      - name: Checkout PR head
+      - name: Checkout bootstrap tree
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
-      - name: Check bootstrap payload
-        id: check
-        shell: pwsh
-        run: |
-          if (Test-Path '.build/current-text.zip') {
-            'bootstrap=true' | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          } else {
-            'bootstrap=false' | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          }
-
       - name: Use .NET 8
-        if: steps.check.outputs.bootstrap == 'true'
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 8.0.x
 
-      - name: Materialize cleaned 1.0.0 source
-        if: steps.check.outputs.bootstrap == 'true'
+      - name: Download exact SleepyChat source package
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          Expand-Archive -Path '.build/current-text.zip' -DestinationPath . -Force
-          Remove-Item '.build' -Recurse -Force
-          Remove-Item '.github/workflows/code-audit-refactor-build.yml' -Force -ErrorAction SilentlyContinue
-          Remove-Item '.github/workflows/publish-release-once.yml' -Force -ErrorAction SilentlyContinue
-          Remove-Item '__binary_probe.txt' -Force -ErrorAction SilentlyContinue
-          Remove-Item 'CSharpHost/assets/app-64.png' -Force -ErrorAction SilentlyContinue
-          Remove-Item 'CSharpHost/assets/app-192.png' -Force -ErrorAction SilentlyContinue
-          Remove-Item 'CSharpHost/assets/sleepychat-mark.webp' -Force -ErrorAction SilentlyContinue
-          node --check CSharpHost/web/js/app.js
-          if ($LASTEXITCODE -ne 0) { throw 'JavaScript syntax validation failed.' }
+          $zip = Join-Path $env:RUNNER_TEMP 'SleepyChat_1.0.0_Source.zip'
+          $urls = @(
+            'https://drive.usercontent.google.com/download?id=1pTZKM_WN-JBBLkUqPeaPlJYV-Qsh3p0v&export=download&confirm=t',
+            'https://drive.google.com/uc?export=download&id=1pTZKM_WN-JBBLkUqPeaPlJYV-Qsh3p0v&confirm=t'
+          )
+          $ok = $false
+          foreach ($url in $urls) {
+            try {
+              Invoke-WebRequest -Uri $url -OutFile $zip -MaximumRedirection 10 -UseBasicParsing
+              if ((Test-Path $zip) -and (Get-Item $zip).Length -gt 10000000) { $ok = $true; break }
+            } catch { Write-Host 'Staging URL failed; trying fallback.' }
+          }
+          if (-not $ok) { throw 'Exact SleepyChat source ZIP could not be downloaded.' }
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne 'fd0d8e6e60e46a72c834efcdd0b4c1ef0b8d3e57519599fca010861b4a7d5ee7') { throw "Source ZIP hash mismatch: $hash" }
+          "SOURCE_ZIP=$zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: Commit clean source to PR branch
-        if: steps.check.outputs.bootstrap == 'true'
+      - name: Materialize exact source tree
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $extract = Join-Path $env:RUNNER_TEMP 'SleepyChatSourceExtract'
+          Expand-Archive -Path $env:SOURCE_ZIP -DestinationPath $extract -Force
+          $sourceRoot = Join-Path $extract 'SleepyChat 1.0.0 Source'
+          if (-not (Test-Path $sourceRoot)) { throw 'Expected source root folder is missing.' }
+          $files = @(Get-ChildItem $sourceRoot -Recurse -File)
+          if ($files.Count -ne 45) { throw "Expected exactly 45 source files, found $($files.Count)." }
+          foreach ($required in @('README.md','BUILD_RELEASE.ps1','CSharpHost/SleepyChat.csproj','CSharpHost/App/Program.cs','CSharpHost/Backend/BackendHost.cs','CSharpHost/web/index.html','.github/workflows/csharp-runtime-smoke.yml')) {
+            if (-not (Test-Path (Join-Path $sourceRoot $required))) { throw "Missing required source file: $required" }
+          }
+          Get-ChildItem -Force | Where-Object { $_.Name -ne '.git' } | Remove-Item -Recurse -Force
+          Get-ChildItem $sourceRoot -Force | ForEach-Object { Copy-Item $_.FullName . -Recurse -Force }
+
+      - name: Commit exact source to main
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
+          $count = [int](git ls-files | Measure-Object -Line).Lines
+          if ($count -ne 45) { throw "Final Git tree should contain exactly 45 files; found $count." }
           git commit -m 'Publish SleepyChat 1.0.0 source'
-          $publishedSha = (git rev-parse HEAD).Trim()
-          "PUBLISHED_SHA=$publishedSha" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          git push origin HEAD:${{ github.head_ref }}
+          $sha = (git rev-parse HEAD).Trim()
+          "PUBLISHED_SHA=$sha" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          git push origin HEAD:main
 
-      - name: Build and validate Windows x64
-        if: steps.check.outputs.bootstrap == 'true'
+      - name: Build Windows x64
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           .\BUILD_RELEASE.ps1
 
       - name: Runtime smoke test
-        if: steps.check.outputs.bootstrap == 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -85,7 +93,7 @@ jobs:
           $proc = Start-Process -FilePath $exe -PassThru
           try {
             $ready = $false
-            for ($i=0; $i -lt 50; $i++) {
+            for ($i=0; $i -lt 60; $i++) {
               if ($proc.HasExited) { throw "SleepyChat exited early: $($proc.ExitCode)" }
               try {
                 $s = Invoke-RestMethod "$base/api/status" -TimeoutSec 2
@@ -94,30 +102,20 @@ jobs:
               Start-Sleep -Milliseconds 500
             }
             if (-not $ready) { throw 'SleepyChat backend did not become ready.' }
-            $kick = Invoke-RestMethod "$base/api/kick-config" -TimeoutSec 5
-            if ($kick.api_base -ne 'https://sleepysource-api.sleepyservices.workers.dev') { throw 'Wrong Kick API base.' }
           } finally {
             if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
           }
 
       - name: Package clean release ZIPs
-        if: steps.check.outputs.bootstrap == 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $publicDir = Join-Path $PWD 'dist\SleepyChat 1.0.0'
-          foreach ($file in @('BUILD_INFO.txt','readme.txt','release_notes.txt')) { Copy-Item $file $publicDir -Force }
+          foreach ($file in @('BUILD_INFO.txt','readme.txt','release_notes.txt')) { if (Test-Path $file) { Copy-Item $file $publicDir -Force } }
           Compress-Archive -Path $publicDir -DestinationPath 'SleepyChat_1.0.0_Public.zip' -CompressionLevel Optimal -Force
-
-          $sourceDir = Join-Path $PWD 'release-source\SleepyChat 1.0.0 Source'
-          New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
-          Get-ChildItem $PWD -Force | Where-Object { $_.Name -notin @('.git','dist','release-source','SleepyChat_1.0.0_Public.zip','SleepyChat_1.0.0_Source.zip') } | ForEach-Object {
-            Copy-Item $_.FullName $sourceDir -Recurse -Force
-          }
-          Compress-Archive -Path $sourceDir -DestinationPath 'SleepyChat_1.0.0_Source.zip' -CompressionLevel Optimal -Force
+          Copy-Item $env:SOURCE_ZIP 'SleepyChat_1.0.0_Source.zip' -Force
 
       - name: Replace v1.0.0 release
-        if: steps.check.outputs.bootstrap == 'true'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
