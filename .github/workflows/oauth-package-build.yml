@@ -1,4 +1,4 @@
-name: SleepyChat OAuth Package Build
+name: SleepyChat Shared OAuth Package Build
 
 on:
   pull_request:
@@ -20,7 +20,7 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
-      - name: Apply OAuth source patch
+      - name: Apply OAuth source and shared-backend override
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -31,13 +31,28 @@ jobs:
           [IO.File]::WriteAllBytes($zip, [Convert]::FromBase64String($b64))
           Expand-Archive -Path $zip -DestinationPath . -Force
           Remove-Item 'CSharpHost/IntegrationConfig.cs' -Force -ErrorAction SilentlyContinue
-          if (-not (Test-Path 'CSharpHost/HostedKickService.cs')) { throw 'HostedKickService.cs was not applied.' }
+
+          $overrideB64 = Get-Content '.build/shared-hostedkick.gz.b64' -Raw
+          $overrideGz = Join-Path $env:RUNNER_TEMP 'HostedKickService.cs.gz'
+          [IO.File]::WriteAllBytes($overrideGz, [Convert]::FromBase64String($overrideB64))
+          $input = [IO.File]::OpenRead($overrideGz)
+          try {
+            $gzip = New-Object IO.Compression.GZipStream($input, [IO.Compression.CompressionMode]::Decompress)
+            try {
+              $output = [IO.File]::Create('CSharpHost/HostedKickService.cs')
+              try { $gzip.CopyTo($output) } finally { $output.Dispose() }
+            } finally { $gzip.Dispose() }
+          } finally { $input.Dispose() }
+
           $backend = [IO.File]::ReadAllText('CSharpHost/BackendHost.cs')
           $hosted = [IO.File]::ReadAllText('CSharpHost/HostedKickService.cs')
           $html = [IO.File]::ReadAllText('CSharpHost/web/index.html')
           if (-not $backend.Contains('/api/kick/oauth/start')) { throw 'OAuth backend routes are missing.' }
           if (-not $html.Contains('/api/kick/oauth/start')) { throw 'OAuth UI flow is missing.' }
-          if (-not $hosted.Contains('sleepychat-api.sleepyservices.workers.dev')) { throw 'SleepyChat hosted API target is missing.' }
+          foreach ($needle in @('https://sleepysource-api.sleepyservices.workers.dev','/kick/events/ensure-chat','X-SleepySource-Connection-Id','X-SleepySource-Connection-Token')) {
+            if (-not $hosted.Contains($needle)) { throw "Shared backend contract missing: $needle" }
+          }
+          if ($hosted.Contains('sleepychat-api.sleepyservices.workers.dev')) { throw 'Old separate SleepyChat API target remains.' }
 
       - name: Validate UI JavaScript
         shell: pwsh
@@ -82,6 +97,7 @@ jobs:
             if (-not $ready) { throw 'Backend did not become ready.' }
             $kick = Invoke-RestMethod "$base/api/kick-config" -TimeoutSec 5
             if ($null -eq $kick.available) { throw 'Kick config route failed.' }
+            if ($kick.api_base -ne 'https://sleepysource-api.sleepyservices.workers.dev') { throw "Wrong hosted API base: $($kick.api_base)" }
             $oauth = Invoke-WebRequest "$base/api/kick/status" -TimeoutSec 5 -UseBasicParsing
             if ($oauth.StatusCode -ne 200) { throw 'Kick OAuth status route failed.' }
           }
@@ -89,9 +105,9 @@ jobs:
             if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
           }
 
-      - name: Upload OAuth Windows build
+      - name: Upload shared OAuth Windows build
         uses: actions/upload-artifact@v7
         with:
-          name: SleepyChat-1.0.0-OAuth-Windows-x64
+          name: SleepyChat-1.0.0-Shared-OAuth-Windows-x64
           path: smoke-dist/
           if-no-files-found: error
