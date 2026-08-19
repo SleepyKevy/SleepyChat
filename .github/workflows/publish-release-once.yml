@@ -1,0 +1,110 @@
+name: Bootstrap SleepyChat 1.0.0 Publish
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  publish:
+    if: github.event.head_commit.message == 'Bootstrap SleepyChat 1.0.0 publish'
+    runs-on: windows-latest
+    steps:
+      - name: Checkout bootstrap tree
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Use .NET 8
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Materialize cleaned 1.0.0 source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Expand-Archive -Path '.build/current-text.zip' -DestinationPath . -Force
+          Remove-Item '.build' -Recurse -Force
+          Remove-Item '.github/workflows/code-audit-refactor-build.yml' -Force -ErrorAction SilentlyContinue
+          Remove-Item '.github/workflows/publish-release-once.yml' -Force -ErrorAction SilentlyContinue
+          Remove-Item 'CSharpHost/assets/app-64.png' -Force -ErrorAction SilentlyContinue
+          Remove-Item 'CSharpHost/assets/app-192.png' -Force -ErrorAction SilentlyContinue
+          Remove-Item 'CSharpHost/assets/sleepychat-mark.webp' -Force -ErrorAction SilentlyContinue
+          if (Get-ChildItem . -Recurse -File | Select-String -Pattern '\bFinal\b' -CaseSensitive:$false -Quiet) { throw 'Standalone Final wording remains in publish source.' }
+          node --check CSharpHost/web/js/app.js
+          if ($LASTEXITCODE -ne 0) { throw 'JavaScript syntax validation failed.' }
+
+      - name: Commit clean source to main
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Publish SleepyChat 1.0.0 source'
+          $publishedSha = (git rev-parse HEAD).Trim()
+          "PUBLISHED_SHA=$publishedSha" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          git push origin HEAD:main
+
+      - name: Build and validate Windows x64
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          .\BUILD_RELEASE.ps1
+
+      - name: Runtime smoke test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = 'http://127.0.0.1:17892'
+          $exe = Resolve-Path 'dist\SleepyChat 1.0.0\SleepyChat.exe'
+          $proc = Start-Process -FilePath $exe -ArgumentList '--headless' -PassThru
+          try {
+            $ready = $false
+            for ($i=0; $i -lt 50; $i++) {
+              if ($proc.HasExited) { throw "SleepyChat exited early: $($proc.ExitCode)" }
+              try {
+                $s = Invoke-RestMethod "$base/api/status" -TimeoutSec 2
+                if ($s.version -eq '1.0.0') { $ready = $true; break }
+              } catch { }
+              Start-Sleep -Milliseconds 500
+            }
+            if (-not $ready) { throw 'SleepyChat backend did not become ready.' }
+            $kick = Invoke-RestMethod "$base/api/kick-config" -TimeoutSec 5
+            if ($kick.api_base -ne 'https://sleepysource-api.sleepyservices.workers.dev') { throw 'Wrong Kick API base.' }
+          } finally {
+            if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+          }
+
+      - name: Package clean release ZIPs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $publicDir = Join-Path $PWD 'dist\SleepyChat 1.0.0'
+          foreach ($file in @('BUILD_INFO.txt','readme.txt','release_notes.txt')) { Copy-Item $file $publicDir -Force }
+          Compress-Archive -Path $publicDir -DestinationPath 'SleepyChat_1.0.0_Public.zip' -CompressionLevel Optimal -Force
+
+          $sourceDir = Join-Path $PWD 'release-source\SleepyChat 1.0.0 Source'
+          New-Item -ItemType Directory -Path $sourceDir -Force | Out-Null
+          Get-ChildItem $PWD -Force | Where-Object { $_.Name -notin @('.git','dist','release-source','SleepyChat_1.0.0_Public.zip','SleepyChat_1.0.0_Source.zip') } | ForEach-Object {
+            Copy-Item $_.FullName $sourceDir -Recurse -Force
+          }
+          Compress-Archive -Path $sourceDir -DestinationPath 'SleepyChat_1.0.0_Source.zip' -CompressionLevel Optimal -Force
+
+      - name: Replace v1.0.0 release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Continue'
+          gh release delete v1.0.0 --repo "${{ github.repository }}" --yes --cleanup-tag 2>$null
+          $global:LASTEXITCODE = 0
+          $ErrorActionPreference = 'Stop'
+          gh release create v1.0.0 'SleepyChat_1.0.0_Public.zip' 'SleepyChat_1.0.0_Source.zip' --repo "${{ github.repository }}" --target "$env:PUBLISHED_SHA" --title 'SleepyChat 1.0.0' --notes-file release_notes.txt --latest
