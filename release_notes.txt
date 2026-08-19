@@ -1,46 +1,39 @@
-SleepyChat 1.0.0 — Current Build
+SLEEPYCHAT 1.0.0 — RELEASE NOTES
+================================
 Made by SleepyKev • 2026
 
-CODE AUDIT / SOURCE STRUCTURE CLEANUP
-=====================================
-- Reorganized the C# source into focused App, Backend, Kick, Updates, and Window folders.
-- Split the oversized MainForm, HostedKickService, and BackendHost responsibilities into smaller partial files.
-- Extracted the WebView CSS and JavaScript from the old monolithic index.html into web/css and web/js.
-- Removed stale bundled Cloudflare Worker/deployment material from the SleepyChat source package.
-- Removed obsolete validation/build assumptions and updated the build script for the current shared Kick API.
-- Removed unused duplicate assets from the cleaned source tree.
-- Added architecture, shared-backend, and code-audit documentation.
-- Runtime behavior and the public product version remain SleepyChat 1.0.0.
+SleepyChat 1.0.0 is the standalone Windows desktop release for unified Kick
+and Twitch chat.
 
-EDGE / THEME RENDER FIX
-=======================
-- Removed the transparent WinForms resize panels that were sitting over the outside edge of the WebView.
-- Those panels exposed the form background and caused the black square/frame effect on non-blue themes.
-- Manual resizing now uses logic-only edge and corner hit detection; nothing visual is layered over the themed UI.
-- Disabled Windows DWM outer-window corner rounding to remove clipped/jagged pixels around the borderless window corners.
-- The fix applies to every SleepyChat theme because the resize system no longer draws over the web UI at all.
+HIGHLIGHTS
+==========
+- Unified All / Kick / Twitch / Mentions chat views.
+- Hosted Connect with Kick OAuth flow with Kick chat receiving and sending.
+- Twitch read-only chat by channel.
+- Twitch/Kick badges and 7TV support.
+- Search, role filters, mention highlighting, density controls, and export.
+- GitHub Releases update checker.
+- Custom borderless Windows shell with tray support and edge/corner resizing.
 
-MANUAL WINDOW RESIZING
-======================
-- Drag the left, right, top, or bottom edge to resize.
-- Drag any corner to resize width and height together.
-- Normal resize cursors remain available.
-- Minimum window size remains 980 x 680.
-- Resize handling disables while maximized.
-- No native Windows caption/frame was restored.
+BRANDING / THEMES
+=================
+- Midnight Pulse uses the supplied blue/cyan raccoon logo.
+- Crimson Rush uses the supplied red raccoon logo.
+- Violet Void uses the supplied purple raccoon logo.
+- Toxic Glow uses the supplied green raccoon logo.
+- Bubblegum Byte uses the supplied pink raccoon logo.
+- Theme switching updates the top-left SleepyChat logo automatically.
 
-UPDATE CHECKER
-==============
-- The connection-style Updates card remains directly under Kick and Twitch.
-- Status light states remain blue/checking, green/up to date, amber/update available, and red/check failed.
-- Check Now and GitHub controls remain included.
+WINDOW ICON FIXES
+=================
+- Corrected the SleepyChat Windows application icon framing.
+- Multi-resolution app.ico includes 16, 32, 48, 64, and 128 pixel frames.
+- The application icon is used for the EXE, taskbar, Alt+Tab, title bar,
+  tray icon, and shortcuts.
 
-PRESERVED / VERIFIED
-====================
-- SleepyChat remains version 1.0.0.
-- Working Kick OAuth and Kick chat sending are unchanged.
-- Shared API remains https://sleepysource-api.sleepyservices.workers.dev.
-- SleepyChat's dark custom title bar remains unchanged.
-- WebView autofill/password-save prompts remain disabled.
-- UI dropdown/spacing/focus/scrollbar polish remains included.
-- Windows x64 publish, runtime startup, Kick status/send, update checker, JavaScript, and edge-regression checks passed.
+PACKAGING
+=========
+- Windows x64 self-contained application.
+- No installer is required; extract the Public ZIP and run SleepyChat.exe.
+- Runtime data is kept in SleepyChat_Data beside the application.
+- Public product version remains SleepyChat 1.0.0.

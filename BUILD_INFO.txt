@@ -1,28 +1,27 @@
 SleepyChat 1.0.0
-Code Audit / Source Structure Refactor
-GitHub Actions run: 32217596295
-Windows artifact: 9352878981
-Windows artifact digest: sha256:955e8f2582c0854b2f0db806d4502384b2798e3b180a331c96ae9e5c71f5b7da
-Verified SleepyChat.exe SHA256: 25802da31396f5f4849982958045c9c2a83cf4cfb3c48a6505b23012f9393f00
-Build branch: code-audit-refactor-20260818 (isolated verification branch; not merged)
+Official release source
+Prepared: 2026-08-19
 
-Audit / validation:
-PASS - reorganized App / Backend / Kick / Updates / Window source layout
-PASS - old flat C# source files removed from cleaned package
-PASS - shared Kick API contracts preserved
-PASS - chat:write send path preserved
-PASS - no separate SleepyChat Cloudflare Worker bundled
-PASS - no native WS_THICKFRAME / CreateParams / WM_NCCALCSIZE regression
-PASS - logic-only manual edge/corner resizing preserved
-PASS - WebView autofill/password-save prompts remain disabled
-PASS - Windows x64 self-contained publish
-PASS - local runtime startup
-PASS - Kick status and unauthenticated send-route smoke tests
-PASS - update checker route
-PASS - verified current application/theme assets hydrated for build
+SOURCE AUDIT
+============
+PASS - public version remains 1.0.0
+PASS - C#/.NET source layout is clean and standalone
+PASS - no Go source or bundled Cloudflare Worker source
+PASS - no developer Client Secret/raw OAuth token embedded in desktop source
+PASS - JavaScript and web-manifest validation are enforced by the release build
+PASS - all five supplied theme logo mappings are verified by the release build
+PASS - source package excludes bin/obj/dist/runtime junk
 
-Source-only validation:
-PASS - external web CSS/JavaScript bundle
-PASS - JavaScript syntax validation
-PASS - stale build/deployment guidance removed
-PASS - code audit and architecture documentation included
+RELEASE BUILD
+=============
+The official v1.0.0 GitHub release is built and smoke-tested on Windows from
+the exact final release-source commit using PACKAGE_RELEASE.ps1.
+
+KEY ASSET SHA256
+================
+app.ico: 3b7e220ea75a9822db2ae6691c4532fe831c6740bb3c52e2e3ebdee0eeb7ce3e
+theme-blue-raccoon.png: 4daeb58e6b79b06e328e89a4a47fee974a6630a1c651edc44cc65ccc27f573ea
+theme-red-raccoon.png: 2536d21a0d406fd9b11a3f36febda72a818ed96df62c2ff9a1f17139d1a0f8c1
+theme-purple-raccoon.png: af91aa5bacee14d45f6bfd59784d1d6d7cc14bdc58a7d081b69396b8257d1c2b
+theme-green-raccoon.png: 48e46a46e334b057b8d991797e6db798ef01b0390611049e8ee54410aea86123
+theme-pink-raccoon.png: e4d32f000f6ed86a52ba5652b9819d7f3ed9db89c020d96996a72b5d03edbc0f

@@ -2,35 +2,42 @@ SLEEPYCHAT 1.0.0
 ================
 Made by SleepyKev • 2026
 
-SleepyChat is a Windows x64 unified Kick + Twitch chat application built with
-C#/.NET 8, WinForms, WebView2, and a local ASP.NET Core/Kestrel service.
+SleepyChat is a standalone Windows x64 unified Kick + Twitch chat application.
+No installer is required. Extract the ZIP and run SleepyChat.exe.
 
 KICK
 ====
-Click Connect with Kick. Users do not enter Client IDs, Client Secrets, tokens,
-relay URLs, webhook URLs, or Cloudflare settings. Kick receiving and sending use
-the hosted shared API at:
-  https://sleepysource-api.sleepyservices.workers.dev
+Use Connect with Kick inside SleepyChat. Users do not enter a Kick Client ID,
+Client Secret, access token, relay URL, webhook URL, or Cloudflare settings.
+Kick chat receiving and sending use the hosted shared API.
 
 TWITCH
 ======
-Twitch chat is currently read-only by channel. Twitch sending requires a future
-Twitch OAuth write integration.
+Enter a Twitch channel to read Twitch chat. Twitch chat is currently read-only;
+Twitch sending would require a future Twitch OAuth write integration.
+
+THEMES
+======
+SleepyChat includes five themes, each with its matching raccoon logo:
+- Midnight Pulse  - blue/cyan
+- Crimson Rush    - red
+- Violet Void     - purple
+- Toxic Glow      - green
+- Bubblegum Byte  - pink
 
 UPDATES
 =======
-The Updates card checks public GitHub Releases for:
-  https://github.com/SleepyKevy/SleepyChat
+The Updates card checks the official SleepyChat GitHub Releases page.
 
-WINDOW
-======
-Starting size: 1280 x 820
-Minimum size: 980 x 680
-Drag any edge or corner to resize.
+WINDOW / TASKBAR
+================
+SleepyChat uses its raccoon application icon for the EXE, window, taskbar,
+Alt+Tab, tray icon, and shortcuts. The window starts at 1280 x 820 and can be
+resized from any edge or corner. Minimum size is 980 x 680.
 
 DATA
 ====
-Runtime data is stored beside the application in:
+Runtime data is created beside the application in:
   SleepyChat_Data\
 
 VERSION
