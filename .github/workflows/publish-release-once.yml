@@ -1,11 +1,12 @@
-name: Bootstrap SleepyChat 1.0.0 Publish
+name: Publish SleepyChat 1.0.0 from PR
 
 on:
-  push:
+  pull_request:
     branches: [main]
 
 permissions:
   contents: write
+  pull-requests: read
 
 env:
   DOTNET_NOLOGO: true
@@ -13,12 +14,12 @@ env:
 
 jobs:
   publish:
-    if: github.event.head_commit.message == 'Bootstrap SleepyChat 1.0.0 publish'
     runs-on: windows-latest
     steps:
-      - name: Checkout bootstrap tree
+      - name: Checkout PR head
         uses: actions/checkout@v6
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
       - name: Use .NET 8
@@ -52,7 +53,9 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $extract = Join-Path $env:RUNNER_TEMP 'SleepyChatSourceExtract'
-          Expand-Archive -Path $env:SOURCE_ZIP -DestinationPath $extract -Force
+          New-Item -ItemType Directory -Path $extract -Force | Out-Null
+          tar.exe -xf $env:SOURCE_ZIP -C $extract
+          if ($LASTEXITCODE -ne 0) { throw 'Source ZIP extraction failed.' }
           $sourceRoot = Join-Path $extract 'SleepyChat 1.0.0 Source'
           if (-not (Test-Path $sourceRoot)) { throw 'Expected source root folder is missing.' }
           $files = @(Get-ChildItem $sourceRoot -Recurse -File)
@@ -62,8 +65,10 @@ jobs:
           }
           Get-ChildItem -Force | Where-Object { $_.Name -ne '.git' } | Remove-Item -Recurse -Force
           Get-ChildItem $sourceRoot -Force | ForEach-Object { Copy-Item $_.FullName . -Recurse -Force }
+          node --check CSharpHost/web/js/app.js
+          if ($LASTEXITCODE -ne 0) { throw 'JavaScript syntax validation failed.' }
 
-      - name: Commit exact source to main
+      - name: Commit exact source to PR branch
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -75,7 +80,7 @@ jobs:
           git commit -m 'Publish SleepyChat 1.0.0 source'
           $sha = (git rev-parse HEAD).Trim()
           "PUBLISHED_SHA=$sha" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          git push origin HEAD:main
+          git push origin HEAD:${{ github.head_ref }}
 
       - name: Build Windows x64
         shell: pwsh
