@@ -1,0 +1,28 @@
+SleepyChat 1.0.0
+Code Audit / Source Structure Refactor
+GitHub Actions run: 32217596295
+Windows artifact: 9352878981
+Windows artifact digest: sha256:955e8f2582c0854b2f0db806d4502384b2798e3b180a331c96ae9e5c71f5b7da
+Verified SleepyChat.exe SHA256: 25802da31396f5f4849982958045c9c2a83cf4cfb3c48a6505b23012f9393f00
+Build branch: code-audit-refactor-20260818 (isolated verification branch; not merged)
+
+Audit / validation:
+PASS - reorganized App / Backend / Kick / Updates / Window source layout
+PASS - old flat C# source files removed from cleaned package
+PASS - shared Kick API contracts preserved
+PASS - chat:write send path preserved
+PASS - no separate SleepyChat Cloudflare Worker bundled
+PASS - no native WS_THICKFRAME / CreateParams / WM_NCCALCSIZE regression
+PASS - logic-only manual edge/corner resizing preserved
+PASS - WebView autofill/password-save prompts remain disabled
+PASS - Windows x64 self-contained publish
+PASS - local runtime startup
+PASS - Kick status and unauthenticated send-route smoke tests
+PASS - update checker route
+PASS - verified current application/theme assets hydrated for build
+
+Source-only validation:
+PASS - external web CSS/JavaScript bundle
+PASS - JavaScript syntax validation
+PASS - stale build/deployment guidance removed
+PASS - code audit and architecture documentation included

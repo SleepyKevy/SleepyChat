@@ -206,7 +206,7 @@ internal sealed partial class BackendHost : IDisposable
         web.MapPost("/api/ping", () => Results.NoContent());
 
         // The C# native host owns X / Alt+F4 shutdown. Keep this route for UI
-        // compatibility with the final 1.0.0 web bundle without making reloads exit.
+        // compatibility with the 1.0.0 web bundle without making reloads exit.
         web.MapPost("/api/window-closing", () => Results.NoContent());
 
         web.MapPost("/api/open-data", () =>

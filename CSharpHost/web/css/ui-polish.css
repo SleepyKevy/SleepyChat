@@ -1,0 +1,43 @@
+/* SleepyChat 1.0.0 UI polish pass. Loaded after the core theme styles. */
+button,input,select{transition:border-color .14s ease,background-color .14s ease,box-shadow .14s ease,opacity .14s ease}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:none}
+button:disabled,input:disabled,select:disabled{cursor:not-allowed;opacity:.58}
+
+.btn{box-shadow:inset 0 1px 0 #ffffff18}
+.btn:hover:not(:disabled){filter:brightness(1.06)}
+.btn:active:not(:disabled){transform:translateY(1px);filter:brightness(.98)}
+.btn.secondary:hover:not(:disabled){border-color:color-mix(in srgb,var(--accent) 40%,var(--line));background:var(--hover)}
+.mini:hover:not(:disabled),.utility:hover:not(:disabled){border-color:color-mix(in srgb,var(--accent) 38%,var(--line))}
+
+.toolbar{align-items:stretch}
+.search,input,select{min-width:0}
+.search:hover:not(:focus),input:hover:not(:focus):not(:disabled),select:hover:not(:focus):not(:disabled){border-color:color-mix(in srgb,var(--accent) 34%,var(--line))}
+select{-webkit-appearance:none;appearance:none;cursor:pointer;padding-right:34px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M2 2.25 6 6l4-3.75' fill='none' stroke='%238fa3bc' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;background-size:12px 8px}
+select:focus{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M2 2.25 6 6l4-3.75' fill='none' stroke='%23eef5ff' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}
+select option{background:#0d1119;color:#eef5ff}
+#roleFilter{min-width:132px}
+#density{min-width:120px}
+
+.message{padding:calc(6px * var(--chat-scale)) 12px}
+.message.compact{padding:calc(3px * var(--chat-scale)) 12px}
+.composer select{width:100%}
+
+.close{width:32px;height:32px;display:grid;place-items:center;border-radius:7px;line-height:1}
+.close:hover{background:var(--hover);color:var(--text)}
+
+.sidebar,.chatFeed,.modal{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--accent) 35%,var(--line)) transparent}
+.sidebar::-webkit-scrollbar,.chatFeed::-webkit-scrollbar,.modal::-webkit-scrollbar{width:10px;height:10px}
+.sidebar::-webkit-scrollbar-track,.chatFeed::-webkit-scrollbar-track,.modal::-webkit-scrollbar-track{background:transparent}
+.sidebar::-webkit-scrollbar-thumb,.chatFeed::-webkit-scrollbar-thumb,.modal::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--accent) 28%,var(--line));border:3px solid transparent;border-radius:999px;background-clip:padding-box}
+.sidebar::-webkit-scrollbar-thumb:hover,.chatFeed::-webkit-scrollbar-thumb:hover,.modal::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--accent) 48%,var(--line));border:3px solid transparent;background-clip:padding-box}
+
+/* Update checker card — intentionally matches the Kick/Twitch connection cards. */
+.updateDot{background:#57a8ff;box-shadow:0 0 8px #57a8ff70}
+.updateDot.good{background:#53fc18;box-shadow:0 0 8px #53fc1870}
+.updateDot.warn{background:#f5b942;box-shadow:0 0 8px #f5b94270}
+.updateDot.bad{background:#ff5d73;box-shadow:0 0 8px #ff5d7370}
+.updateStatus.checking{color:#8fc8ff}
+.updateStatus.good{color:var(--good)}
+.updateStatus.warn{color:var(--warn)}
+.updateStatus.bad{color:#ff7487}
+#updateMessage{min-height:30px}

@@ -1,83 +1,46 @@
-SleepyChat 1.0.0 — Release Notes
+SleepyChat 1.0.0 — Current Build
 Made by SleepyKev • 2026
 
-FINAL RELEASE-CANDIDATE CLEANUP
-===============================
-- Standardized the repository on the C#/.NET 8 desktop host only.
-- Removed obsolete alternate-host/bootstrap source and its packaging path.
-- Removed stale data-location migration behavior so WebView2 data now has one
-  predictable SleepyChat-owned location under SleepyChat_Data\WebView2.
-- Removed stale prototype/production wording from the Twitch connection UI.
-- Kept the public product version fixed at 1.0.0.
+CODE AUDIT / SOURCE STRUCTURE CLEANUP
+=====================================
+- Reorganized the C# source into focused App, Backend, Kick, Updates, and Window folders.
+- Split the oversized MainForm, HostedKickService, and BackendHost responsibilities into smaller partial files.
+- Extracted the WebView CSS and JavaScript from the old monolithic index.html into web/css and web/js.
+- Removed stale bundled Cloudflare Worker/deployment material from the SleepyChat source package.
+- Removed obsolete validation/build assumptions and updated the build script for the current shared Kick API.
+- Removed unused duplicate assets from the cleaned source tree.
+- Added architecture, shared-backend, and code-audit documentation.
+- Runtime behavior and the public product version remain SleepyChat 1.0.0.
 
-NATIVE WINDOWS HOST
-===================
-- WinForms native shell with Microsoft WebView2.
-- Compact SleepyChat-owned title bar.
-- Default window size 1280 x 820; minimum 980 x 680.
-- X and Alt+F4 perform a full application exit.
-- Minimize preserves taskbar presence and tray access.
-- Tray Open / Open Data / Exit actions retained.
-- Explicit Windows application identity added for stable taskbar grouping.
-- Dark-window treatment and Windows 11 rounded-corner preference retained.
-- Back/forward mouse navigation is filtered before it can change the embedded UI.
+EDGE / THEME RENDER FIX
+=======================
+- Removed the transparent WinForms resize panels that were sitting over the outside edge of the WebView.
+- Those panels exposed the form background and caused the black square/frame effect on non-blue themes.
+- Manual resizing now uses logic-only edge and corner hit detection; nothing visual is layered over the themed UI.
+- Disabled Windows DWM outer-window corner rounding to remove clipped/jagged pixels around the borderless window corners.
+- The fix applies to every SleepyChat theme because the resize system no longer draws over the web UI at all.
 
-CHAT / UI PORT
-==============
-The latest 1.0.0 UI/assets were carried into the C# host, including:
-- final All / Kick / Twitch / Mentions view controls
-- compact view menu and layout polish
-- platform art and favicon set
-- Twitch badge catalog/channel-badge support
-- Kick role/subscriber badge support
-- badge positioning and username-color improvements
-- unified font scaling
-- final runtime-ready indicator behavior
-- existing native/subscriber emote and 7TV functionality
-
-BACKEND PORT
-============
-The C# local backend now exposes the matching final UI contracts:
-- /api/status
-- /api/ping
-- /api/window-closing
-- /api/open-data
-- /api/kick-config
-- /api/7tv
-- /api/twitch-badges
-- /api/kick-badges
-- /api/kick-badge-image
-
-The badge/image proxy code restricts upstream HTTPS hosts, validates redirects,
-requires image content types, and applies response size limits.
-
-RELEASE SAFETY
-==============
-- BUILD_RELEASE.ps1 rejects unexpected legacy-host source/markers before publish.
-- GitHub Actions performs the same source guard on Windows.
-- CI validates UI JavaScript and manifest syntax.
-- CI publishes the exact C# source as self-contained win-x64.
-- CI validates executable version/icon and required assets.
-- CI launches the compiled executable in headless mode and probes local contracts.
-- CI uploads the smoke-tested Windows artifact as SleepyChat-1.0.0-Windows-x64.
-
-
-WINDOW CONTROL HOTFIX
-=====================
-- Removed the custom F11/fullscreen implementation entirely.
-- F11 is no longer used as a SleepyChat window shortcut.
-- WebView2 browser accelerator keys remain disabled, preventing embedded browser
-  fullscreen behavior from taking over the desktop.
-- Normal Windows maximize/restore is handled by the title-bar maximize control,
-  title-bar double-click, Windows snap, and standard window commands.
-- Replaced the old Unicode minimize/maximize/close symbols with clean drawn line
-  glyphs for a tighter, more native-looking title bar.
-- Preserved the existing dark SleepyChat title-bar palette and close-button hover.
-
-FINAL BUILD VALIDATION
+MANUAL WINDOW RESIZING
 ======================
-- Windows x64 self-contained compile: PASS.
-- Exact-source F11/fullscreen guard: PASS.
-- Executable version metadata validation: PASS.
-- Headless backend runtime smoke test: PASS.
-- Exact C# build source returned from the successful CI run: PASS.
+- Drag the left, right, top, or bottom edge to resize.
+- Drag any corner to resize width and height together.
+- Normal resize cursors remain available.
+- Minimum window size remains 980 x 680.
+- Resize handling disables while maximized.
+- No native Windows caption/frame was restored.
+
+UPDATE CHECKER
+==============
+- The connection-style Updates card remains directly under Kick and Twitch.
+- Status light states remain blue/checking, green/up to date, amber/update available, and red/check failed.
+- Check Now and GitHub controls remain included.
+
+PRESERVED / VERIFIED
+====================
+- SleepyChat remains version 1.0.0.
+- Working Kick OAuth and Kick chat sending are unchanged.
+- Shared API remains https://sleepysource-api.sleepyservices.workers.dev.
+- SleepyChat's dark custom title bar remains unchanged.
+- WebView autofill/password-save prompts remain disabled.
+- UI dropdown/spacing/focus/scrollbar polish remains included.
+- Windows x64 publish, runtime startup, Kick status/send, update checker, JavaScript, and edge-regression checks passed.
