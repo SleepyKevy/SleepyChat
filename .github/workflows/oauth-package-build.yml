@@ -33,10 +33,11 @@ jobs:
           Remove-Item 'CSharpHost/IntegrationConfig.cs' -Force -ErrorAction SilentlyContinue
           if (-not (Test-Path 'CSharpHost/HostedKickService.cs')) { throw 'HostedKickService.cs was not applied.' }
           $backend = [IO.File]::ReadAllText('CSharpHost/BackendHost.cs')
+          $hosted = [IO.File]::ReadAllText('CSharpHost/HostedKickService.cs')
           $html = [IO.File]::ReadAllText('CSharpHost/web/index.html')
           if (-not $backend.Contains('/api/kick/oauth/start')) { throw 'OAuth backend routes are missing.' }
           if (-not $html.Contains('/api/kick/oauth/start')) { throw 'OAuth UI flow is missing.' }
-          if (-not $backend.Contains('sleepychat-api.sleepyservices.workers.dev')) { throw 'SleepyChat hosted API target is missing.' }
+          if (-not $hosted.Contains('sleepychat-api.sleepyservices.workers.dev')) { throw 'SleepyChat hosted API target is missing.' }
 
       - name: Validate UI JavaScript
         shell: pwsh
