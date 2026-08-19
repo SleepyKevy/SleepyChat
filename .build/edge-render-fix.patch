@@ -1,0 +1,288 @@
+--- a/CSharpHost/MainForm.cs
++++ b/CSharpHost/MainForm.cs
+@@ -7,11 +7,15 @@
+ 
+ namespace SleepyChat;
+ 
+-internal sealed class MainForm : Form
++internal sealed class MainForm : Form, IMessageFilter
+ {
+     private const string AppTitle = "SleepyChat 1.0.0";
+     private const int WM_CLOSE = 0x0010;
++    private const int WM_SETCURSOR = 0x0020;
+     private const int WM_NCLBUTTONDOWN = 0x00A1;
++    private const int WM_MOUSEMOVE = 0x0200;
++    private const int WM_LBUTTONDOWN = 0x0201;
++    private const int WM_LBUTTONUP = 0x0202;
+     private const int HTCAPTION = 0x0002;
+     private const int ResizeGripThickness = 6;
+     private const int ResizeCornerSize = 14;
+@@ -19,7 +23,7 @@
+     private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+     private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+     private const int DWMWA_BORDER_COLOR = 34;
+-    private const int DWMWCP_ROUND = 2;
++    private const int DWMWCP_DONOTROUND = 1;
+ 
+     private readonly WebView2 webView;
+     private readonly BackendHost backend = new();
+@@ -28,7 +32,7 @@
+     private readonly ContextMenuStrip trayMenu;
+     private readonly Panel titleBar;
+     private readonly CaptionButton maximizeButton;
+-    private readonly List<Control> resizeGrips = [];
++    private readonly System.Windows.Forms.Timer resizeTimer = new() { Interval = 16 };
+     private bool manualResizeActive;
+     private ResizeDirection manualResizeDirection;
+     private Point manualResizeStartCursor;
+@@ -138,7 +142,19 @@
+ 
+         Controls.Add(webView);
+         Controls.Add(titleBar);
+-        CreateResizeGrips();
++
++        resizeTimer.Tick += (_, _) =>
++        {
++            if (!manualResizeActive)
++                return;
++            if ((Control.MouseButtons & MouseButtons.Left) == 0)
++            {
++                EndManualResize();
++                return;
++            }
++            ApplyManualResize(Cursor.Position);
++        };
++        Application.AddMessageFilter(this);
+ 
+         trayMenu = new ContextMenuStrip();
+         trayMenu.Items.Add("Open SleepyChat", null, (_, _) => RestoreFromTray());
+@@ -158,7 +174,6 @@
+         Shown += OnShown;
+         FormClosing += OnFormClosing;
+         Resize += OnResize;
+-        ResizeEnd += (_, _) => EndManualResize();
+     }
+ 
+     private static CaptionButton CreateCaptionButton(CaptionButtonKind kind, EventHandler onClick)
+@@ -190,96 +205,94 @@
+         };
+     }
+ 
+-    private void CreateResizeGrips()
++    public bool PreFilterMessage(ref Message m)
+     {
+-        AddResizeGrip(ResizeDirection.Top, Cursors.SizeNS);
+-        AddResizeGrip(ResizeDirection.Bottom, Cursors.SizeNS);
+-        AddResizeGrip(ResizeDirection.Left, Cursors.SizeWE);
+-        AddResizeGrip(ResizeDirection.Right, Cursors.SizeWE);
+-        AddResizeGrip(ResizeDirection.TopLeft, Cursors.SizeNWSE);
+-        AddResizeGrip(ResizeDirection.TopRight, Cursors.SizeNESW);
+-        AddResizeGrip(ResizeDirection.BottomLeft, Cursors.SizeNESW);
+-        AddResizeGrip(ResizeDirection.BottomRight, Cursors.SizeNWSE);
+-        LayoutResizeGrips();
+-    }
++        if (shutdownStarted || WindowState != FormWindowState.Normal)
++            return false;
+ 
+-    private void AddResizeGrip(ResizeDirection direction, Cursor cursor)
+-    {
+-        var grip = new Panel
++        if (manualResizeActive)
+         {
+-            BackColor = Color.Transparent,
+-            Cursor = cursor,
+-            TabStop = false,
+-            Tag = direction
+-        };
+-        grip.MouseDown += OnResizeGripMouseDown;
+-        grip.MouseMove += OnResizeGripMouseMove;
+-        grip.MouseUp += OnResizeGripMouseUp;
+-        resizeGrips.Add(grip);
+-        Controls.Add(grip);
+-        grip.BringToFront();
++            if (m.Msg == WM_MOUSEMOVE)
++            {
++                ApplyManualResize(Cursor.Position);
++                return true;
++            }
++
++            if (m.Msg == WM_LBUTTONUP)
++            {
++                EndManualResize();
++                return true;
++            }
++
++            return false;
++        }
++
++        if (m.Msg is not (WM_SETCURSOR or WM_LBUTTONDOWN))
++            return false;
++
++        var direction = HitTestResizeDirection(Cursor.Position);
++        if (direction == ResizeDirection.None)
++            return false;
++
++        Cursor.Current = CursorForResizeDirection(direction);
++        if (m.Msg == WM_LBUTTONDOWN)
++        {
++            BeginManualResize(direction);
++            return true;
++        }
++
++        return true;
+     }
+ 
+-    private void LayoutResizeGrips()
++    private ResizeDirection HitTestResizeDirection(Point screenPoint)
+     {
+-        if (resizeGrips.Count != 8)
+-            return;
++        var bounds = Bounds;
++        if (!bounds.Contains(screenPoint))
++            return ResizeDirection.None;
+ 
+-        var active = WindowState == FormWindowState.Normal && !shutdownStarted;
+-        foreach (var grip in resizeGrips)
+-            grip.Visible = active;
+-        if (!active)
+-            return;
++        var x = screenPoint.X - bounds.Left;
++        var y = screenPoint.Y - bounds.Top;
++        var width = bounds.Width;
++        var height = bounds.Height;
++
++        var nearLeftCorner = x < ResizeCornerSize;
++        var nearRightCorner = x >= width - ResizeCornerSize;
++        var nearTopCorner = y < ResizeCornerSize;
++        var nearBottomCorner = y >= height - ResizeCornerSize;
+ 
+-        var width = ClientSize.Width;
+-        var height = ClientSize.Height;
+-        var edge = ResizeGripThickness;
+-        var corner = ResizeCornerSize;
+-        var horizontal = Math.Max(0, width - (corner * 2));
+-        var vertical = Math.Max(0, height - (corner * 2));
++        if (nearTopCorner && nearLeftCorner) return ResizeDirection.TopLeft;
++        if (nearTopCorner && nearRightCorner) return ResizeDirection.TopRight;
++        if (nearBottomCorner && nearLeftCorner) return ResizeDirection.BottomLeft;
++        if (nearBottomCorner && nearRightCorner) return ResizeDirection.BottomRight;
+ 
+-        SetResizeGripBounds(ResizeDirection.Top, corner, 0, horizontal, edge);
+-        SetResizeGripBounds(ResizeDirection.Bottom, corner, Math.Max(0, height - edge), horizontal, edge);
+-        SetResizeGripBounds(ResizeDirection.Left, 0, corner, edge, vertical);
+-        SetResizeGripBounds(ResizeDirection.Right, Math.Max(0, width - edge), corner, edge, vertical);
+-        SetResizeGripBounds(ResizeDirection.TopLeft, 0, 0, corner, corner);
+-        SetResizeGripBounds(ResizeDirection.TopRight, Math.Max(0, width - corner), 0, corner, corner);
+-        SetResizeGripBounds(ResizeDirection.BottomLeft, 0, Math.Max(0, height - corner), corner, corner);
+-        SetResizeGripBounds(ResizeDirection.BottomRight, Math.Max(0, width - corner), Math.Max(0, height - corner), corner, corner);
++        if (x < ResizeGripThickness) return ResizeDirection.Left;
++        if (x >= width - ResizeGripThickness) return ResizeDirection.Right;
++        if (y < ResizeGripThickness) return ResizeDirection.Top;
++        if (y >= height - ResizeGripThickness) return ResizeDirection.Bottom;
+ 
+-        foreach (var grip in resizeGrips)
+-            grip.BringToFront();
++        return ResizeDirection.None;
+     }
+ 
+-    private void SetResizeGripBounds(ResizeDirection direction, int x, int y, int width, int height)
++    private static Cursor CursorForResizeDirection(ResizeDirection direction) => direction switch
+     {
+-        var grip = resizeGrips.First(c => c.Tag is ResizeDirection d && d == direction);
+-        grip.SetBounds(x, y, Math.Max(1, width), Math.Max(1, height));
+-    }
++        ResizeDirection.Top or ResizeDirection.Bottom => Cursors.SizeNS,
++        ResizeDirection.Left or ResizeDirection.Right => Cursors.SizeWE,
++        ResizeDirection.TopLeft or ResizeDirection.BottomRight => Cursors.SizeNWSE,
++        ResizeDirection.TopRight or ResizeDirection.BottomLeft => Cursors.SizeNESW,
++        _ => Cursors.Default
++    };
+ 
+-    private void OnResizeGripMouseDown(object? sender, MouseEventArgs e)
++    private void BeginManualResize(ResizeDirection direction)
+     {
+-        if (e.Button != MouseButtons.Left || WindowState != FormWindowState.Normal || sender is not Control grip || grip.Tag is not ResizeDirection direction)
++        if (WindowState != FormWindowState.Normal)
+             return;
+ 
+         manualResizeActive = true;
+         manualResizeDirection = direction;
+         manualResizeStartCursor = Cursor.Position;
+         manualResizeStartBounds = Bounds;
+-        grip.Capture = true;
+-    }
+-
+-    private void OnResizeGripMouseMove(object? sender, MouseEventArgs e)
+-    {
+-        if (!manualResizeActive || (Control.MouseButtons & MouseButtons.Left) == 0)
+-            return;
+-        ApplyManualResize(Cursor.Position);
+-    }
+-
+-    private void OnResizeGripMouseUp(object? sender, MouseEventArgs e)
+-    {
+-        if (e.Button == MouseButtons.Left)
+-            EndManualResize();
++        Capture = true;
++        resizeTimer.Start();
+     }
+ 
+     private void ApplyManualResize(Point cursorPosition)
+@@ -325,6 +338,7 @@
+             if (resizeLeft)
+                 left = start.Right - minWidth;
+         }
++
+         if (height < minHeight)
+         {
+             height = minHeight;
+@@ -339,10 +353,10 @@
+     {
+         if (!manualResizeActive)
+             return;
++
+         manualResizeActive = false;
++        resizeTimer.Stop();
+         Capture = false;
+-        foreach (var grip in resizeGrips)
+-            grip.Capture = false;
+     }
+ 
+     private static Bitmap CreateTitleBitmap(Icon icon)
+@@ -395,7 +409,7 @@
+             _ = DwmSetWindowAttribute(Handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkMode, size);
+             if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
+             {
+-                var corner = DWMWCP_ROUND;
++                var corner = DWMWCP_DONOTROUND;
+                 _ = DwmSetWindowAttribute(Handle, DWMWA_WINDOW_CORNER_PREFERENCE, ref corner, size);
+                 var borderNone = unchecked((int)0xFFFFFFFE);
+                 _ = DwmSetWindowAttribute(Handle, DWMWA_BORDER_COLOR, ref borderNone, size);
+@@ -516,7 +530,8 @@
+             return;
+ 
+         maximizeButton.RestoreGlyph = WindowState == FormWindowState.Maximized;
+-        LayoutResizeGrips();
++        if (WindowState != FormWindowState.Normal)
++            EndManualResize();
+ 
+         if (WindowState == FormWindowState.Minimized)
+         {
+@@ -596,6 +611,9 @@
+     {
+         if (disposing)
+         {
++            Application.RemoveMessageFilter(this);
++            resizeTimer.Stop();
++            resizeTimer.Dispose();
+             try { trayIcon.Visible = false; } catch { }
+             trayIcon.Dispose();
+             trayMenu.Dispose();
+@@ -609,6 +627,7 @@
+ 
+     private enum ResizeDirection
+     {
++        None,
+         Top,
+         Bottom,
+         Left,
