@@ -85,6 +85,14 @@ if ($LASTEXITCODE -ne 0) { throw 'dotnet restore failed.' }
 & dotnet publish $project -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true --no-restore -o $out
 if ($LASTEXITCODE -ne 0) { throw 'dotnet publish failed.' }
 
+# Copy runtime web and branding assets explicitly. This keeps the published
+# folder deterministic even when MSBuild omits individual non-code files.
+foreach ($folder in @('web','assets')) {
+    $sourceFolder = Join-Path $root "CSharpHost\$folder"
+    if (-not (Test-Path $sourceFolder)) { throw "Required runtime folder is missing: $sourceFolder" }
+    Copy-Item $sourceFolder $out -Recurse -Force
+}
+
 $requiredOutput = @(
     'SleepyChat.exe',
     'web\index.html',
