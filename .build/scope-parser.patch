@@ -1,8 +1,6 @@
-diff --git a/CSharpHost/HostedKickService.cs b/CSharpHost/HostedKickService.cs
-index 305bc04..88b9a6b 100644
 --- a/CSharpHost/HostedKickService.cs
 +++ b/CSharpHost/HostedKickService.cs
-@@ -224,7 +224,14 @@ internal sealed class HostedKickService : IDisposable
+@@ -224,7 +224,14 @@
          }
  
          await SaveCredentialAsync();
@@ -18,7 +16,7 @@ index 305bc04..88b9a6b 100644
          StartDeliveryLoops();
          return State();
      }
-@@ -289,7 +296,7 @@ internal sealed class HostedKickService : IDisposable
+@@ -289,7 +296,7 @@
          if (!HasCredential())
              return State();
  
@@ -27,19 +25,23 @@ index 305bc04..88b9a6b 100644
          var status = String(result.RootElement, "status");
          var ready = Bool(result.RootElement, "all_required_subscribed");
          lock (gate)
-@@ -644,15 +651,30 @@ internal sealed class HostedKickService : IDisposable
+@@ -644,15 +651,30 @@
          state.KickUserID = String(connection, "kick_user_id");
          state.KickUsername = String(connection, "kick_username").Trim().ToLowerInvariant();
          state.Scopes = [];
 -        if (connection.TryGetProperty("scopes", out var scopes) && scopes.ValueKind == JsonValueKind.Array)
-+        if (connection.TryGetProperty("scopes", out var scopes))
-         {
+-        {
 -            foreach (var scope in scopes.EnumerateArray())
-+            if (scopes.ValueKind == JsonValueKind.Array)
-             {
+-            {
 -                var value = scope.GetString()?.Trim() ?? "";
 -                if (value.Length > 0)
 -                    state.Scopes.Add(value);
+-            }
+-        }
++        if (connection.TryGetProperty("scopes", out var scopes))
++        {
++            if (scopes.ValueKind == JsonValueKind.Array)
++            {
 +                foreach (var scope in scopes.EnumerateArray())
 +                {
 +                    var value = scope.GetString()?.Trim() ?? "";
@@ -55,8 +57,8 @@ index 305bc04..88b9a6b 100644
 +                    if (value.Length > 0)
 +                        state.Scopes.Add(value);
 +                }
-             }
-         }
++            }
++        }
 +        state.Scopes = state.Scopes
 +            .Distinct(StringComparer.OrdinalIgnoreCase)
 +            .ToList();
@@ -64,7 +66,7 @@ index 305bc04..88b9a6b 100644
              x => x.Equals("chat:write", StringComparison.OrdinalIgnoreCase));
      }
 diff --git a/CSharpHost/MainForm.cs b/CSharpHost/MainForm.cs
-index 8f21e66..0a0ca11 100644
+index 8f21e66..630afb7 100644
 --- a/CSharpHost/MainForm.cs
 +++ b/CSharpHost/MainForm.cs
 @@ -11,6 +11,7 @@ internal sealed class MainForm : Form
@@ -75,7 +77,15 @@ index 8f21e66..0a0ca11 100644
      private const int WM_NCHITTEST = 0x0084;
      private const int WM_NCLBUTTONDOWN = 0x00A1;
      private const int HTCAPTION = 0x0002;
-@@ -76,7 +77,8 @@ internal sealed class MainForm : Form
+@@ -24,6 +25,7 @@ internal sealed class MainForm : Form
+     private const int HTBOTTOMRIGHT = 17;
+     private const int ResizeBorder = 7;
+     private const int WS_THICKFRAME = 0x00040000;
++    private const int WS_CAPTION = 0x00C00000;
+     private const int WS_SYSMENU = 0x00080000;
+     private const int WS_MINIMIZEBOX = 0x00020000;
+     private const int WS_MAXIMIZEBOX = 0x00010000;
+@@ -76,7 +78,8 @@ internal sealed class MainForm : Form
              Dock = DockStyle.Top,
              Height = 30,
              BackColor = Color.FromArgb(6, 8, 13),
@@ -85,7 +95,7 @@ index 8f21e66..0a0ca11 100644
          };
  
          var titleIcon = new PictureBox
-@@ -138,7 +140,8 @@ internal sealed class MainForm : Form
+@@ -138,7 +141,8 @@ internal sealed class MainForm : Form
              Dock = DockStyle.Fill,
              DefaultBackgroundColor = Color.FromArgb(6, 8, 13),
              AllowExternalDrop = false,
@@ -95,13 +105,25 @@ index 8f21e66..0a0ca11 100644
          };
  
          Controls.Add(webView);
-@@ -272,6 +275,15 @@ internal sealed class MainForm : Form
+@@ -229,7 +233,11 @@ internal sealed class MainForm : Form
+         get
+         {
+             var parameters = base.CreateParams;
+-            parameters.Style |= WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
++            // SleepyChat draws its own dark title bar. Keep only the resize frame;
++            // explicitly strip native caption/system-box styles so Windows cannot
++            // fall back to a classic/light title bar above the custom one.
++            parameters.Style &= ~(WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX);
++            parameters.Style |= WS_THICKFRAME;
+             return parameters;
+         }
+     }
+@@ -272,6 +280,14 @@ internal sealed class MainForm : Form
              return;
          }
  
-+        // Keep the resizable/snap-capable WS_THICKFRAME style, but remove the
-+        // visible native non-client strip that Windows can draw above a
-+        // borderless custom title bar.
++        // Extend the client area through the invisible native frame so the
++        // custom dark title bar reaches the very top edge without a gray strip.
 +        if (m.Msg == WM_NCCALCSIZE && m.WParam != IntPtr.Zero)
 +        {
 +            m.Result = IntPtr.Zero;
@@ -111,7 +133,7 @@ index 8f21e66..0a0ca11 100644
          if (m.Msg == WM_NCHITTEST && WindowState == FormWindowState.Normal)
          {
              base.WndProc(ref m);
-@@ -335,6 +347,8 @@ internal sealed class MainForm : Form
+@@ -335,6 +351,8 @@ internal sealed class MainForm : Form
          core.Settings.IsStatusBarEnabled = false;
          core.Settings.IsZoomControlEnabled = false;
          core.Settings.AreBrowserAcceleratorKeysEnabled = false;
