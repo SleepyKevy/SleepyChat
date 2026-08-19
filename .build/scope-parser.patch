@@ -1,5 +1,5 @@
---- CSharpHost/HostedKickService.cs	2026-08-19 01:15:57.413668034 +0000
-+++ CSharpHost/HostedKickService.cs	2026-08-19 01:15:57.414747913 +0000
+--- a/CSharpHost/HostedKickService.cs
++++ b/CSharpHost/HostedKickService.cs
 @@ -644,15 +644,30 @@
          state.KickUserID = String(connection, "kick_user_id");
          state.KickUsername = String(connection, "kick_username").Trim().ToLowerInvariant();
