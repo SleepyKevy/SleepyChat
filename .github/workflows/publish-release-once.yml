@@ -51,7 +51,14 @@ jobs:
           Remove-Item 'CSharpHost/assets/app-64.png' -Force -ErrorAction SilentlyContinue
           Remove-Item 'CSharpHost/assets/app-192.png' -Force -ErrorAction SilentlyContinue
           Remove-Item 'CSharpHost/assets/sleepychat-mark.webp' -Force -ErrorAction SilentlyContinue
-          if (Get-ChildItem . -Recurse -File | Select-String -Pattern '\bFinal\b' -CaseSensitive:$false -Quiet) { throw 'Standalone Final wording remains in publish source.' }
+
+          $textFiles = Get-ChildItem . -Recurse -File | Where-Object {
+            $_.Extension -in @('.cs','.ps1','.md','.txt','.yml','.yaml','.css','.js','.html','.webmanifest','.csproj') -or $_.Name -eq '.gitignore'
+          }
+          if (Select-String -Path $textFiles.FullName -Pattern '\bFinal\b' -CaseSensitive:$false -Quiet) {
+            throw 'Standalone Final wording remains in publish source.'
+          }
+
           node --check CSharpHost/web/js/app.js
           if ($LASTEXITCODE -ne 0) { throw 'JavaScript syntax validation failed.' }
 
@@ -82,7 +89,8 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $base = 'http://127.0.0.1:17892'
           $exe = Resolve-Path 'dist\SleepyChat 1.0.0\SleepyChat.exe'
-          $proc = Start-Process -FilePath $exe -ArgumentList '--headless' -PassThru
+          $env:SLEEPYCHAT_HEADLESS = '1'
+          $proc = Start-Process -FilePath $exe -PassThru
           try {
             $ready = $false
             for ($i=0; $i -lt 50; $i++) {
