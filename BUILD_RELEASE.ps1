@@ -144,6 +144,12 @@ foreach ($folder in @('web','assets')) {
 Copy-Item (Join-Path $root 'readme.txt') (Join-Path $out 'README.txt') -Force
 Copy-Item (Join-Path $root 'release_notes.txt') (Join-Path $out 'RELEASE_NOTES.txt') -Force
 
+# NuGet packages can publish XML documentation files alongside runtime DLLs.
+# They are developer documentation only and are not required by SleepyChat at
+# runtime, so keep the public release folder clean by removing them.
+Get-ChildItem $out -Recurse -Filter *.xml -File -ErrorAction SilentlyContinue |
+    Remove-Item -Force -ErrorAction Stop
+
 $requiredOutput = @(
     'SleepyChat.exe',
     'README.txt',
@@ -168,6 +174,9 @@ foreach ($relative in $requiredOutput) {
 
 if (Get-ChildItem $out -Recurse -Filter *.pdb -File -ErrorAction SilentlyContinue) {
     throw 'Release output unexpectedly contains PDB files.'
+}
+if (Get-ChildItem $out -Recurse -Filter *.xml -File -ErrorAction SilentlyContinue) {
+    throw 'Release output unexpectedly contains XML documentation files.'
 }
 
 $exe = Join-Path $out 'SleepyChat.exe'
