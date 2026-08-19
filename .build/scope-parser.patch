@@ -1,0 +1,38 @@
+--- a/CSharpHost/HostedKickService.cs
++++ b/CSharpHost/HostedKickService.cs
+@@ -644,15 +644,30 @@
+         state.KickUserID = String(connection, "kick_user_id");
+         state.KickUsername = String(connection, "kick_username").Trim().ToLowerInvariant();
+         state.Scopes = [];
+-        if (connection.TryGetProperty("scopes", out var scopes) && scopes.ValueKind == JsonValueKind.Array)
++        if (connection.TryGetProperty("scopes", out var scopes))
+         {
+-            foreach (var scope in scopes.EnumerateArray())
++            if (scopes.ValueKind == JsonValueKind.Array)
+             {
+-                var value = scope.GetString()?.Trim() ?? "";
+-                if (value.Length > 0)
+-                    state.Scopes.Add(value);
++                foreach (var scope in scopes.EnumerateArray())
++                {
++                    var value = scope.GetString()?.Trim() ?? "";
++                    if (value.Length > 0)
++                        state.Scopes.Add(value);
++                }
++            }
++            else if (scopes.ValueKind == JsonValueKind.String)
++            {
++                var raw = scopes.GetString() ?? "";
++                foreach (var value in raw.Split([' ', ',', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
++                {
++                    if (value.Length > 0)
++                        state.Scopes.Add(value);
++                }
+             }
+         }
++        state.Scopes = state.Scopes
++            .Distinct(StringComparer.OrdinalIgnoreCase)
++            .ToList();
+         state.CanSendChat = state.Scopes.Any(
+             x => x.Equals("chat:write", StringComparison.OrdinalIgnoreCase));
+     }
