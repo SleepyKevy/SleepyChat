@@ -1,0 +1,4 @@
+SleepyChat 1.0.0 public release verified clean
+sha256=1765bc70cb1e1d24a426df5832d9d846cd77d478fa18bb6ca262f4eb2aad09fd
+entries=SleepyChat.exe, assets/, web/, BUILD_INFO.txt, readme.txt, release_notes.txt
+removed=SleepyChat_Data/, Microsoft.Web.WebView2.*.xml
