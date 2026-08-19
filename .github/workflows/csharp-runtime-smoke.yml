@@ -81,9 +81,19 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          dotnet --version
           dotnet restore CSharpHost/SleepyChat.csproj -r win-x64
           dotnet publish CSharpHost/SleepyChat.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true --no-restore -o smoke-dist
           if ($LASTEXITCODE -ne 0 -or -not (Test-Path 'smoke-dist/SleepyChat.exe')) { throw 'Publish failed.' }
+
+          # Copy runtime web and branding assets explicitly. The official release
+          # build uses the same deterministic layout, so the smoke build must too.
+          foreach ($folder in @('web','assets')) {
+            $sourceFolder = Join-Path 'CSharpHost' $folder
+            if (-not (Test-Path $sourceFolder)) { throw "Required runtime folder missing: $sourceFolder" }
+            Copy-Item $sourceFolder 'smoke-dist' -Recurse -Force
+          }
+
           foreach ($path in @('smoke-dist/web/index.html','smoke-dist/web/css/app.css','smoke-dist/web/css/ui-polish.css','smoke-dist/web/js/app.js','smoke-dist/assets/app.ico','smoke-dist/assets/platform-kick.png','smoke-dist/assets/platform-twitch.png')) {
             if (-not (Test-Path $path)) { throw "Published file missing: $path" }
           }
