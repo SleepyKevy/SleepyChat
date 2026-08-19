@@ -1,1 +1,0 @@
-Trigger exact SleepyChat 1.0.0 source import and release.
