@@ -93,6 +93,12 @@ foreach ($folder in @('web','assets')) {
     Copy-Item $sourceFolder $out -Recurse -Force
 }
 
+# Keep the public runtime folder clean. NuGet XML documentation files are not
+# required to run SleepyChat, and user data must be created only at runtime.
+Get-ChildItem $out -Filter 'Microsoft.Web.WebView2.*.xml' -File -ErrorAction SilentlyContinue | Remove-Item -Force
+$dataDir = Join-Path $out 'SleepyChat_Data'
+if (Test-Path $dataDir) { Remove-Item $dataDir -Recurse -Force }
+
 $requiredOutput = @(
     'SleepyChat.exe',
     'web\index.html',
