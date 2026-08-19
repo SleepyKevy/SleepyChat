@@ -1,0 +1,169 @@
+name: SleepyChat Code Audit Refactor Build
+
+on:
+  pull_request:
+    branches: [ui-polish-build-20260818]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-refactor:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v6
+
+      - name: Use .NET 8
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Apply audited source structure
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $parts = Get-ChildItem '.build/refactor.part*' -File | Sort-Object Name
+          if (-not $parts) { throw 'Refactor overlay chunks are missing.' }
+          $zip = Join-Path $env:RUNNER_TEMP 'refactor-overlay.zip'
+          [IO.File]::WriteAllBytes($zip, [Convert]::FromBase64String((($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join '')))
+
+          foreach ($path in @(
+            'CSharpHost/AppUtil.cs','CSharpHost/Program.cs','CSharpHost/BackendHost.cs','CSharpHost/HostedKickService.cs','CSharpHost/MainForm.cs','CSharpHost/UpdateService.cs',
+            'CSharpHost/assets/ui-polish.css','CSharpHost/assets/app-64.png','CSharpHost/assets/app-192.png','CSharpHost/assets/sleepychat-mark.webp',
+            'OAUTH_STATIC_CHECKS.txt','VALIDATION.txt'
+          )) { Remove-Item $path -Force -ErrorAction SilentlyContinue }
+          Remove-Item 'CloudflareWorker' -Recurse -Force -ErrorAction SilentlyContinue
+          Expand-Archive -Path $zip -DestinationPath . -Force
+
+      - name: Validate audited source structure
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $required = @(
+            'CSharpHost/App/Program.cs','CSharpHost/App/AppUtil.cs',
+            'CSharpHost/Backend/BackendHost.cs','CSharpHost/Backend/BackendHost.Media.cs',
+            'CSharpHost/Kick/HostedKickModels.cs','CSharpHost/Kick/HostedKickService.cs','CSharpHost/Kick/HostedKickService.Delivery.cs','CSharpHost/Kick/HostedKickService.Storage.cs','CSharpHost/Kick/HostedKickService.Helpers.cs',
+            'CSharpHost/Updates/UpdateService.cs',
+            'CSharpHost/Window/MainForm.cs','CSharpHost/Window/MainForm.Resize.cs','CSharpHost/Window/MainForm.WebView.cs','CSharpHost/Window/MainForm.Window.cs','CSharpHost/Window/MainForm.CaptionButton.cs',
+            'CSharpHost/web/index.html','CSharpHost/web/css/app.css','CSharpHost/web/css/ui-polish.css','CSharpHost/web/js/app.js',
+            'docs/ARCHITECTURE.md','docs/CODE_AUDIT.md','docs/SHARED_KICK_BACKEND.md'
+          )
+          foreach ($path in $required) { if (-not (Test-Path $path)) { throw "Missing audited source file: $path" } }
+          foreach ($old in @('CSharpHost/AppUtil.cs','CSharpHost/Program.cs','CSharpHost/BackendHost.cs','CSharpHost/HostedKickService.cs','CSharpHost/MainForm.cs','CSharpHost/UpdateService.cs','CloudflareWorker')) {
+            if (Test-Path $old) { throw "Stale source path remains: $old" }
+          }
+
+          $allText = (Get-ChildItem . -Recurse -File -Include *.cs,*.ps1,*.md,*.txt,*.html,*.js,*.css | Where-Object { $_.FullName -notmatch '\\.git\\|\\.build\\' } | ForEach-Object { Get-Content $_.FullName -Raw }) -join "`n"
+          if ($allText.Contains('/kick/events/ensure-chat')) { throw 'Stale ensure-chat route remains.' }
+          if ($allText.Contains('sleepychat-api.sleepyservices.workers.dev')) { throw 'Stale SleepyChat API hostname remains.' }
+
+      - name: Validate current contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $kick = (Get-ChildItem 'CSharpHost/Kick' -Filter *.cs | ForEach-Object { Get-Content $_.FullName -Raw }) -join "`n"
+          foreach ($needle in @('https://sleepysource-api.sleepyservices.workers.dev','/oauth/kick/start','/oauth/kick/status','/kick/events/sync','/kick/chat/send','chat:write','JsonValueKind.String','ProtectedData.Protect')) {
+            if (-not $kick.Contains($needle)) { throw "Kick contract missing: $needle" }
+          }
+
+          $window = (Get-ChildItem 'CSharpHost/Window' -Filter *.cs | ForEach-Object { Get-Content $_.FullName -Raw }) -join "`n"
+          foreach ($needle in @('FormBorderStyle = FormBorderStyle.None','Size = new Size(1280, 820)','MinimumSize = new Size(980, 680)','IMessageFilter','HitTestResizeDirection','ResizeDirection.TopLeft','ResizeDirection.BottomRight','DWMWCP_DONOTROUND','IsGeneralAutofillEnabled = false','IsPasswordAutosaveEnabled = false')) {
+            if (-not $window.Contains($needle)) { throw "Window contract missing: $needle" }
+          }
+          foreach ($bad in @('protected override CreateParams','WS_THICKFRAME','WM_NCCALCSIZE','CreateResizeGrips','AddResizeGrip')) {
+            if ($window.Contains($bad)) { throw "Window regression present: $bad" }
+          }
+
+          $backend = (Get-ChildItem 'CSharpHost/Backend' -Filter *.cs | ForEach-Object { Get-Content $_.FullName -Raw }) -join "`n"
+          foreach ($needle in @('127.0.0.1:17892','/api/kick/chat/send','/api/update/check','/css/{**name}','/js/{**name}')) {
+            if (-not $backend.Contains($needle)) { throw "Backend contract missing: $needle" }
+          }
+
+      - name: Validate web bundle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $html = [IO.File]::ReadAllText('CSharpHost/web/index.html')
+          if ($html -notmatch 'SleepyChat 1\.0\.0') { throw 'SleepyChat version marker missing from UI.' }
+          foreach ($needle in @('/css/app.css','/css/ui-polish.css','/js/app.js','Connect with Kick')) {
+            if (-not $html.Contains($needle)) { throw "Web bundle reference missing: $needle" }
+          }
+          node --check CSharpHost/web/js/app.js
+          if ($LASTEXITCODE -ne 0) { throw 'JavaScript syntax validation failed.' }
+          Get-Content CSharpHost/web/manifest.webmanifest -Raw | ConvertFrom-Json | Out-Null
+
+      - name: Publish Windows x64
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet restore CSharpHost/SleepyChat.csproj -r win-x64
+          dotnet publish CSharpHost/SleepyChat.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true --no-restore -o final-dist
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path 'final-dist/SleepyChat.exe')) { throw 'Publish failed.' }
+          foreach ($path in @('final-dist/web/index.html','final-dist/web/css/app.css','final-dist/web/css/ui-polish.css','final-dist/web/js/app.js','final-dist/assets/app.ico','final-dist/assets/platform-kick.png','final-dist/assets/platform-twitch.png')) {
+            if (-not (Test-Path $path)) { throw "Published file missing: $path" }
+          }
+          $v = (Get-Item 'final-dist/SleepyChat.exe').VersionInfo
+          if ($v.FileVersion -notlike '1.0.0*' -or $v.ProductVersion -notlike '1.0.0*') { throw 'Wrong executable version.' }
+
+      - name: Runtime smoke test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = 'http://127.0.0.1:17892'
+          $proc = Start-Process -FilePath (Resolve-Path 'final-dist/SleepyChat.exe') -ArgumentList '--headless' -PassThru
+          try {
+            $ready = $false
+            for ($i=0; $i -lt 50; $i++) {
+              if ($proc.HasExited) { throw "SleepyChat exited early: $($proc.ExitCode)" }
+              try { $s = Invoke-RestMethod "$base/api/status" -TimeoutSec 2; if ($s.version -eq '1.0.0') { $ready=$true; break } } catch { }
+              Start-Sleep -Milliseconds 500
+            }
+            if (-not $ready) { throw 'Backend did not become ready.' }
+
+            foreach ($route in @('/','/css/app.css','/css/ui-polish.css','/js/app.js')) {
+              $r = Invoke-WebRequest ($base + $route) -TimeoutSec 5 -UseBasicParsing
+              if ($r.StatusCode -ne 200) { throw "Static route failed: $route" }
+            }
+
+            $kick = Invoke-RestMethod "$base/api/kick-config" -TimeoutSec 5
+            if ($kick.api_base -ne 'https://sleepysource-api.sleepyservices.workers.dev') { throw 'Wrong Kick API base.' }
+            $status = Invoke-WebRequest "$base/api/kick/status" -TimeoutSec 5 -UseBasicParsing
+            if ($status.StatusCode -ne 200) { throw 'Kick status failed.' }
+            try {
+              Invoke-WebRequest "$base/api/kick/chat/send" -Method Post -ContentType 'application/json' -Body '{"content":"smoke"}' -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop | Out-Null
+            } catch {
+              if ([int]$_.Exception.Response.StatusCode -ne 400) { throw }
+            }
+
+            $update = Invoke-WebRequest "$base/api/update/check" -TimeoutSec 12 -UseBasicParsing
+            if ($update.StatusCode -ne 200) { throw 'Update checker failed.' }
+          } finally {
+            if ($proc -and -not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+          }
+
+      - name: Package audited source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Path final-source -Force | Out-Null
+          Copy-Item CSharpHost final-source/CSharpHost -Recurse -Force
+          Copy-Item docs final-source/docs -Recurse -Force
+          foreach ($item in @('README.md','readme.txt','release_notes.txt','BUILD_RELEASE.ps1','.gitignore')) {
+            if (Test-Path $item) { Copy-Item $item final-source/$item -Force }
+          }
+
+      - name: Upload verified Windows build
+        uses: actions/upload-artifact@v7
+        with:
+          name: SleepyChat-1.0.0-Code-Audit-Windows-x64
+          path: final-dist/
+          if-no-files-found: error
+
+      - name: Upload verified source
+        uses: actions/upload-artifact@v7
+        with:
+          name: SleepyChat-1.0.0-Code-Audit-Source
+          path: final-source/
+          if-no-files-found: error
