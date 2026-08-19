@@ -1,8 +1,8 @@
 name: Trigger SleepyChat 1.0.0 Release
 
 on:
-  pull_request_target:
-    types: [opened]
+  pull_request:
+    types: [opened, synchronize]
 
 permissions:
   actions: write
