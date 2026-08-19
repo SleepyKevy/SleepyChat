@@ -1,11 +1,12 @@
-name: Bootstrap SleepyChat 1.0.0 Publish
+name: Publish SleepyChat 1.0.0 from PR
 
 on:
-  push:
+  pull_request:
     branches: [main]
 
 permissions:
   contents: write
+  pull-requests: read
 
 env:
   DOTNET_NOLOGO: true
@@ -13,20 +14,32 @@ env:
 
 jobs:
   publish:
-    if: github.event.head_commit.message == 'Bootstrap SleepyChat 1.0.0 publish'
     runs-on: windows-latest
     steps:
-      - name: Checkout bootstrap tree
+      - name: Checkout PR head
         uses: actions/checkout@v6
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
+      - name: Check bootstrap payload
+        id: check
+        shell: pwsh
+        run: |
+          if (Test-Path '.build/current-text.zip') {
+            'bootstrap=true' | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          } else {
+            'bootstrap=false' | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
+
       - name: Use .NET 8
+        if: steps.check.outputs.bootstrap == 'true'
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 8.0.x
 
       - name: Materialize cleaned 1.0.0 source
+        if: steps.check.outputs.bootstrap == 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -42,7 +55,8 @@ jobs:
           node --check CSharpHost/web/js/app.js
           if ($LASTEXITCODE -ne 0) { throw 'JavaScript syntax validation failed.' }
 
-      - name: Commit clean source to main
+      - name: Commit clean source to PR branch
+        if: steps.check.outputs.bootstrap == 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -52,15 +66,17 @@ jobs:
           git commit -m 'Publish SleepyChat 1.0.0 source'
           $publishedSha = (git rev-parse HEAD).Trim()
           "PUBLISHED_SHA=$publishedSha" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          git push origin HEAD:main
+          git push origin HEAD:${{ github.head_ref }}
 
       - name: Build and validate Windows x64
+        if: steps.check.outputs.bootstrap == 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           .\BUILD_RELEASE.ps1
 
       - name: Runtime smoke test
+        if: steps.check.outputs.bootstrap == 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -85,6 +101,7 @@ jobs:
           }
 
       - name: Package clean release ZIPs
+        if: steps.check.outputs.bootstrap == 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -100,6 +117,7 @@ jobs:
           Compress-Archive -Path $sourceDir -DestinationPath 'SleepyChat_1.0.0_Source.zip' -CompressionLevel Optimal -Force
 
       - name: Replace v1.0.0 release
+        if: steps.check.outputs.bootstrap == 'true'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
